@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "台股盤後行動選股",
+  "short_name": "台股選股",
+  "description": "上市、上櫃股票盤後基本面、技術面與籌碼面篩選工具",
+  "lang": "zh-Hant-TW",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08131d",
+  "theme_color": "#08131d",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

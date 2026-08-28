@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#08131d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="台股選股">
+  <meta name="description" content="上市、上櫃股票盤後基本面、技術面與籌碼面篩選工具">
+  <title>台股盤後行動選股</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="logo">▥</div>
+      <div><small>TW STOCK · AFTER MARKET</small><h1>台股盤後行動選股</h1></div>
+      <div class="header-actions"><button id="syncTop" class="primary">更新</button><button id="importTop" class="secondary">匯入</button></div>
+      <input id="fileInput" type="file" accept="application/json,.json" hidden>
+    </header>
+    <section id="installHint" class="install-hint" hidden>
+      <div><b>安裝到 iPhone 主畫面</b><span>Safari 下方「分享」→「加入主畫面」，之後就能像 App 一樣開啟，不需要登入。</span></div>
+      <button id="dismissInstall" class="close-hint" aria-label="關閉安裝提示">×</button>
+    </section>
+    <section id="offlineHint" class="offline-hint" hidden>目前離線，仍可使用上次下載的盤後資料。</section>
+    <section id="empty" class="empty-state">
+      <div class="upload-icon">⇧</div>
+      <small>第一次使用</small>
+      <h2>下載最新盤後資料</h2>
+      <p>按一下即可從雲端同步上市、上櫃股票資料。完成後資料會留在手機，可離線篩選與查看；JSON 匯入仍保留作為備用。</p>
+      <button id="syncEmpty" class="primary large">更新最新資料</button>
+      <button id="importEmpty" class="secondary large">從 JSON 匯入</button>
+    </section>
+    <div id="dashboard" hidden>
+      <section class="stats">
+        <div><span>交易日</span><b id="tradeDate">—</b></div>
+        <div><span>手機資料庫</span><b id="stockCount">0 檔</b></div>
+        <div><span>雲端狀態</span><b id="cloudStatus">待檢查</b></div>
+      </section>
+      <section class="controls">
+        <input id="search" placeholder="搜尋代碼或名稱">
+        <select id="industry"></select>
+        <select id="sort">
+          <option value="change_desc">漲幅高 → 低</option>
+          <option value="change_asc">跌幅大 → 小</option>
+          <option value="capital_desc">股本大 → 小</option>
+          <option value="volume_desc">成交量大 → 小</option>
+          <option value="price_desc">股價高 → 低</option>
+          <option value="code_asc">代碼小 → 大</option>
+        </select>
+      </section>
+      <details id="screenPanel" class="screen-panel" open>
+        <summary>手機篩選條件</summary>
+        <div class="condition-builder">
+          <select id="conditionCategory"></select>
+          <select id="conditionType"></select>
+          <div id="conditionParams" class="condition-params"></div>
+          <button id="addCondition" class="secondary">加入條件</button>
+        </div>
+        <ul id="activeConditions" class="active-conditions"></ul>
+        <div class="strategy-manager">
+          <input id="strategyName" maxlength="40" placeholder="輸入策略名稱，例如：投信低檔放量">
+          <select id="savedStrategy"><option value="">選擇已儲存策略</option></select>
+          <button id="saveStrategy" class="secondary">儲存策略</button>
+          <button id="loadStrategy" class="secondary">載入策略</button>
+          <button id="deleteStrategy" class="danger">刪除</button>
+        </div>
+        <div class="screen-actions"><button id="runScreen" class="primary">開始篩選</button><button id="clearConditions" class="secondary">清除條件</button></div>
+      </details>
+      <details id="strategy"><summary id="strategyTitle"></summary><ul id="conditions"></ul></details>
+      <div class="list-title"><b id="visibleCount"></b><span>點選股票查看完整資料</span></div>
+      <section id="stockList" class="stock-list"></section>
+    </div>
+  </main>
+  <div id="detail" class="detail" hidden>
+    <div class="detail-panel">
+      <button id="closeDetail" class="close">×</button>
+      <section class="detail-head">
+        <span id="detailCode" class="code"></span><h2 id="detailName"></h2><small id="detailIndustry"></small>
+        <div class="detail-price"><b id="detailClose"></b><span id="detailChange"></span></div>
+        <div class="metrics"><div><span>股本</span><b id="detailCapital"></b></div><div><span>成交量</span><b id="detailVolume"></b></div><div><span>符合</span><b id="detailMatch"></b></div></div>
+      </section>
+      <nav class="tabs"><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
+      <section id="tab-price" class="tab active"><div class="chart-tools"><b>K 線</b><select id="days"><option>60</option><option>120</option><option selected>180</option></select></div><canvas id="candle"></canvas></section>
+      <section id="tab-fund" class="tab"><h3>近一年 MoM / YoY</h3><canvas id="revenue"></canvas><h3>單季 EPS</h3><div id="eps" class="eps"></div></section>
+      <section id="tab-chip" class="tab"><h3>近 20 日法人買賣超（張）</h3><div id="chip"></div></section>
+      <section id="tab-condition" class="tab"><h3>符合條件明細</h3><ul id="detailConditions" class="condition-list"></ul></section>
+    </div>
+  </div>
+  <div id="message" class="message" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
