@@ -1,0 +1,49 @@
+name: 更新台股盤後資料
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 台北時間週一至週五 20:30（GitHub cron 使用 UTC）
+    - cron: "30 12 * * 1-5"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tw-stock-cloud-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: 安裝套件
+        run: pip install -r cloud-requirements.txt
+      - name: 取得前次資料庫
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data release
+          if gh release download latest -p tw_stock_cloud.sqlite3.gz -D data; then
+            gzip -df data/tw_stock_cloud.sqlite3.gz
+          fi
+      - name: 更新官方資料並建立手機快照
+        run: python cloud_update.py --db data/tw_stock_cloud.sqlite3 --output release
+      - name: 發布固定網址的最新資料
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view latest >/dev/null 2>&1; then
+            gh release create latest --target "$GITHUB_SHA" --title "台股最新盤後資料" --notes "由 GitHub Actions 每晚自動更新"
+          fi
+          gh release upload latest \
+            release/manifest.json \
+            release/snapshot.json.gz \
+            release/tw_stock_cloud.sqlite3.gz \
+            --clobber
