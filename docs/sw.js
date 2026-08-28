@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tw-stock-pwa-v2';
+const CACHE_NAME = 'tw-stock-pwa-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -25,7 +25,10 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+  const scopePath = new URL(self.registration.scope).pathname;
+  if (url.pathname.startsWith(scopePath + 'data/')) return;
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(() => caches.match('./index.html')));
     return;

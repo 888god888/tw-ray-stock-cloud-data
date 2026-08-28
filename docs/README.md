@@ -11,20 +11,21 @@
 
 ## 啟用 GitHub Pages
 
-1. 將整個 `docs` 資料夾放進儲存庫的 `main` 分支。
+1. 將整個 `docs` 資料夾與 `.github/workflows/pages.yml` 放進儲存庫的 `main` 分支。
 2. 進入 GitHub 儲存庫的 `Settings → Pages`。
-3. `Source` 選擇 `Deploy from a branch`。
-4. Branch 選 `main`，資料夾選 `/docs`，按 `Save`。
+3. `Source` 選擇 `GitHub Actions`。
+4. 到 `Actions → 部署 iPhone PWA` 執行一次 `Run workflow`；之後盤後資料更新成功會自動部署。
 5. 等待部署完成後，開啟：
    `https://888god888.github.io/tw-ray-stock-cloud-data/`
 
 ## 資料更新
 
-PWA 會讀取固定 Release `latest` 中的：
+`部署 iPhone PWA` Workflow 會從固定 Release `latest` 取得：
 
 - `manifest.json`：版本、日期、SHA-256。
 - `snapshot.json.gz`：完整市場盤後快照。
 
+資料會與 PWA 一起發布到同一個 GitHub Pages 網域，避免 Safari 的 CORS 限制。
 股票快照會解壓後存進 IndexedDB；離線時仍可使用最近一次成功下載的資料。
 App 程式外殼由 Service Worker 快取，股票快照不會放進 Service Worker Cache。
 

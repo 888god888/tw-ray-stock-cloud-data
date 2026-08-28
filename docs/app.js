@@ -2,9 +2,9 @@ const $=id=>document.getElementById(id);
 let snapshot=null,selected=null,screenedStocks=null,activeConditions=[],builderReady=false;
 const ACTIVE_CONDITIONS_KEY='tw-stock-mobile-conditions';
 const SAVED_STRATEGIES_KEY='tw-stock-mobile-saved-strategies-v1';
-const CLOUD_RELEASE='https://github.com/888god888/tw-ray-stock-cloud-data/releases/download/latest/';
-const CLOUD_MANIFEST=CLOUD_RELEASE+'manifest.json';
-const CLOUD_SNAPSHOT=CLOUD_RELEASE+'snapshot.json.gz';
+const CLOUD_DATA=new URL('./data/',window.location.href).href;
+const CLOUD_MANIFEST=CLOUD_DATA+'manifest.json';
+const CLOUD_SNAPSHOT=CLOUD_DATA+'snapshot.json.gz';
 const CLOUD_HASH_KEY='tw-stock-pwa-snapshot-sha256';
 
 const CONDITION_SPECS=[
@@ -86,8 +86,8 @@ async function checkCloudLatest(silent=false){
   const remoteHash=String(manifest.snapshot_sha256||'');
   const localHash=localStorage.getItem(CLOUD_HASH_KEY)||'';
   if(snapshot&&remoteHash&&remoteHash===localHash){setCloudStatus(`已是最新 ${manifest.latest_trade_date||''}`.trim());if(!silent)showMessage('目前已經是最新盤後資料',true);return}
-  if(silent){setCloudStatus(`有新資料 ${manifest.latest_trade_date||''}`.trim());return}
-  showMessage('正在下載並解壓縮最新盤後資料，第一次可能需要數分鐘…',true);
+  setCloudStatus(`正在更新 ${manifest.latest_trade_date||''}`.trim());
+  if(!silent)showMessage('正在下載並解壓縮最新盤後資料，第一次可能需要數分鐘…',true);
   const snapshotUrl=manifest.snapshot_file?new URL(manifest.snapshot_file,CLOUD_SNAPSHOT).href:CLOUD_SNAPSHOT;
   const buffer=await (await fetchNoCache(snapshotUrl,'快照下載失敗：')).arrayBuffer();
   if(remoteHash){const actualHash=await sha256Hex(buffer);if(actualHash&&actualHash!==remoteHash)throw Error('雲端資料校驗失敗，請稍後重試')}
@@ -97,7 +97,7 @@ async function checkCloudLatest(silent=false){
   if(remoteHash)localStorage.setItem(CLOUD_HASH_KEY,remoteHash);
   setup();if(activeConditions.length)runScreen();
   setCloudStatus(`最新 ${snapshot.latest_trade_date||''}`.trim());
-  showMessage(`更新完成：${snapshot.latest_trade_date||'最新'}，共 ${snapshot.stocks.length} 檔`,true);
+  if(!silent)showMessage(`更新完成：${snapshot.latest_trade_date||'最新'}，共 ${snapshot.stocks.length} 檔`,true);
  }catch(e){setCloudStatus(snapshot?'使用上次資料':'更新失敗');if(!silent)showMessage('更新失敗：'+(e&&e.message?e.message:String(e)))}
 }
 async function startCloudSync(){setSyncBusy(true);try{await checkCloudLatest(false)}finally{setSyncBusy(false)}}
@@ -231,4 +231,4 @@ function setupPwa(){
  window.addEventListener('online',updateOnlineState);window.addEventListener('offline',updateOnlineState);updateOnlineState();
 }
 setupPwa();
-dbLoad().then(v=>{snapshot=v;setup();if(snapshot&&navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)}).catch(()=>setup());
+dbLoad().then(v=>{snapshot=v;setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)}).catch(()=>{setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)});
