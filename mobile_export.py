@@ -133,11 +133,24 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
         )
         eps_records = []
         if financial is not None and not financial.empty:
-            eps = financial[financial["type"] == "EPS"].sort_values("date").tail(12)
+            quarterly = financial[financial["type"] == "EPS"].sort_values("date").tail(12)
             eps_records = [
-                {"date": str(item["date"]), "value": _float(item["value"], 0.0)}
-                for item in eps.to_dict("records")
+                {"date": str(item["date"]), "value": _float(item["value"], 0.0),
+                 "kind": "quarterly", "label": "單季"}
+                for item in quarterly.to_dict("records")
             ]
+            cumulative = financial[
+                financial["type"] == "EPS_CUMULATIVE"
+            ].sort_values("date")
+            latest_quarterly_date = str(quarterly.iloc[-1]["date"]) if not quarterly.empty else ""
+            if not cumulative.empty and str(cumulative.iloc[-1]["date"]) > latest_quarterly_date:
+                latest = cumulative.iloc[-1]
+                eps_records.append({
+                    "date": str(latest["date"]),
+                    "value": _float(latest["value"], 0.0),
+                    "kind": "cumulative", "label": "本年度累計",
+                })
+            eps_records.sort(key=lambda item: item["date"])
 
         paid_in_capital = capital_by_id.get(stock_id)
         fallback_close = price_records[-1]["close"] if price_records else 0.0

@@ -827,7 +827,7 @@ class OfficialMarketClient:
         """Parse the latest general-industry income statement OpenAPI snapshot."""
         output = []
         mappings = (
-            (("基本每股盈餘", "BasicEarningsPerShare", "EPS"),
+            (("基本每股盈餘(元)", "基本每股盈餘", "BasicEarningsPerShare", "EPS"),
              "EPS_CUMULATIVE", "基本每股盈餘（累計）", 1.0),
             (("營業收入", "OperatingRevenue"),
              "OperatingRevenue", "營業收入", 1000.0),
@@ -835,7 +835,7 @@ class OfficialMarketClient:
              "GrossProfit", "營業毛利", 1000.0),
             (("營業利益", "OperatingIncomeLoss", "OperatingIncome"),
              "OperatingIncome", "營業利益", 1000.0),
-            (("本期淨利", "ProfitLoss", "IncomeAfterTaxes"),
+            (("本期淨利", "稅後淨利", "ProfitLoss", "IncomeAfterTaxes"),
              "IncomeAfterTaxes", "本期淨利", 1000.0),
         )
         for row in rows or []:
@@ -861,6 +861,24 @@ class OfficialMarketClient:
                 })
         return pd.DataFrame(output)
 
+    def fetch_latest_eps_summary(self, market: str) -> pd.DataFrame:
+        """Fetch the official all-industry EPS summary for the latest quarter.
+
+        Unlike the industry-specific ``t187ap06_*_ci`` feed, this endpoint
+        includes general, finance, insurance, securities and holding companies.
+        """
+        endpoint = (
+            f"{TWSE_OPENAPI}/opendata/t187ap14_L"
+            if market == "TWSE"
+            else f"{TPEX_OPENAPI}/mopsfin_t187ap14_O"
+        )
+        result = self.parse_income_statement_openapi_rows(
+            self._get(endpoint).json(), market
+        )
+        if result.empty or result[result["type"] == "EPS_CUMULATIVE"].empty:
+            raise OfficialDataError(f"{market} EPS OpenAPI 有回應，但沒有可解析資料")
+        return result
+
     def fetch_quarterly_income_statement(self, year: int, quarter: int,
                                          market: str) -> pd.DataFrame:
         typek = "sii" if market == "TWSE" else "otc"
@@ -885,15 +903,10 @@ class OfficialMarketClient:
         except Exception as exc:
             errors.append(f"MOPS 舊入口: {exc}")
 
-        endpoint = (
-            f"{TWSE_OPENAPI}/opendata/t187ap06_L_ci"
-            if market == "TWSE"
-            else f"{TPEX_OPENAPI}/mopsfin_t187ap06_O_ci"
-        )
+        # 官方「各產業 EPS 統計」一次涵蓋全市場及所有財報業別，是 GitHub
+        # Actions 被 MOPS 歷史頁擋住時較穩定的最新季備援。
         try:
-            latest = self.parse_income_statement_openapi_rows(
-                self._get(endpoint).json(), market
-            )
+            latest = self.fetch_latest_eps_summary(market)
             report_year = pd.to_datetime(latest["date"]).dt.year if not latest.empty else pd.Series(dtype=int)
             report_quarter = pd.to_datetime(latest["date"]).dt.quarter if not latest.empty else pd.Series(dtype=int)
             matched = latest[(report_year == year) & (report_quarter == quarter)]
@@ -1212,7 +1225,8 @@ class OfficialDataService:
         for idx, (year, quarter, market) in enumerate(jobs, 1):
             if self._stopped(stop_event):
                 break
-            key = f"financial:{market}:{year}Q{quarter}"
+            # v2 會重新嘗試舊資料庫曾被不完整一般業 OpenAPI 標記成功的季度。
+            key = f"financial:v2:{market}:{year}Q{quarter}"
             if self.store.sync_succeeded(key):
                 self._emit(callback, f"略過已下載 {market} {year}Q{quarter} 財報", idx, len(jobs))
                 continue
