@@ -42,15 +42,19 @@
       </section>
       <section class="controls">
         <input id="search" placeholder="搜尋代碼或名稱">
-        <select id="industry"></select>
-        <select id="sort">
-          <option value="change_desc">漲幅高 → 低</option>
-          <option value="change_asc">跌幅大 → 小</option>
-          <option value="capital_desc">股本大 → 小</option>
-          <option value="volume_desc">成交量大 → 小</option>
-          <option value="price_desc">股價高 → 低</option>
-          <option value="code_asc">代碼小 → 大</option>
-        </select>
+        <div class="industry-filter">
+          <button id="industryToggle" type="button" aria-expanded="false"><span>產業別</span><b id="industrySummary">全部產業</b><i>⌄</i></button>
+          <div id="industryPanel" class="industry-panel" hidden>
+            <div class="industry-panel-head"><b>選擇產業別（可複選）</b><button id="clearIndustries" type="button">全部清除</button></div>
+            <div id="industryOptions" class="industry-options"></div>
+            <button id="closeIndustries" type="button" class="primary">套用並關閉</button>
+          </div>
+        </div>
+        <div class="sort-controls">
+          <label>第一排序<select id="sort1" class="sort-select"></select></label>
+          <label>第二排序<select id="sort2" class="sort-select"></select></label>
+          <label>第三排序<select id="sort3" class="sort-select"></select></label>
+        </div>
       </section>
       <details id="screenPanel" class="screen-panel" open>
         <summary>手機篩選條件</summary>
@@ -76,8 +80,12 @@
     </div>
   </main>
   <div id="detail" class="detail" hidden>
-    <div class="detail-panel">
-      <button id="closeDetail" class="close">×</button>
+    <div id="detailPanel" class="detail-panel">
+      <div class="detail-nav">
+        <button id="backDetail" class="back-detail" type="button" aria-label="返回股票清單">← 返回</button>
+        <span>由畫面左側向右滑也能返回</span>
+        <button id="closeDetail" class="close" type="button" aria-label="關閉股票資料">×</button>
+      </div>
       <section class="detail-head">
         <span id="detailCode" class="code"></span><h2 id="detailName"></h2><small id="detailIndustry"></small>
         <div class="detail-price"><b id="detailClose"></b><span id="detailChange"></span></div>
@@ -85,7 +93,13 @@
       </section>
       <nav class="tabs"><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
       <section id="tab-price" class="tab active"><div class="chart-tools"><b>K 線</b><select id="days"><option>60</option><option>120</option><option selected>180</option></select></div><canvas id="candle"></canvas></section>
-      <section id="tab-fund" class="tab"><h3>近一年 MoM / YoY</h3><canvas id="revenue"></canvas><h3>單季 EPS</h3><div id="eps" class="eps"></div></section>
+      <section id="tab-fund" class="tab">
+        <h3>近一年營收成長率</h3>
+        <div class="revenue-legend"><span><i class="mom"></i>MoM（月增率）</span><span><i class="yoy"></i>YoY（年增率）</span></div>
+        <canvas id="revenue" aria-label="近一年 MoM 與 YoY 百分比圖"></canvas>
+        <div class="table-scroll"><table class="revenue-table"><thead><tr><th>月份</th><th>MoM 月增率</th><th>YoY 年增率</th></tr></thead><tbody id="revenueRows"></tbody></table></div>
+        <h3 id="epsTitle">EPS</h3><div id="eps" class="eps"></div>
+      </section>
       <section id="tab-chip" class="tab"><h3>近 20 日法人買賣超（張）</h3><div id="chip"></div></section>
       <section id="tab-condition" class="tab"><h3>符合條件明細</h3><ul id="detailConditions" class="condition-list"></ul></section>
     </div>
