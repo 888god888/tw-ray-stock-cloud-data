@@ -257,9 +257,10 @@ function compareStocks(key,a,b){
  return cmp[key]?cmp[key]():0;
 }
 function renderEps(items){
- const values=sorted(items).slice(-8).reverse(),hasCumulative=values.some(x=>x.kind==='cumulative');
- $('epsTitle').textContent=hasCumulative?'EPS（單季／本年度累計）':'單季 EPS';
- $('eps').innerHTML=values.map(x=>`<div><span>${esc(x.date)} · ${esc(x.label||(x.kind==='cumulative'?'本年度累計':'單季'))}</span><b>${num(x.value).toFixed(2)}</b></div>`).join('')||'<div>沒有 EPS 資料</div>';
+ const ordered=sorted(items),quarterly=ordered.filter(x=>x.kind!=='cumulative');
+ const values=(quarterly.length?quarterly.slice(-4):ordered.filter(x=>x.kind==='cumulative').slice(-1)).reverse();
+ $('epsTitle').textContent=quarterly.length>=4?'近四季單季 EPS':quarterly.length?`單季 EPS（目前 ${quarterly.length} 季）`:'EPS';
+ $('eps').innerHTML=values.map(x=>`<div><span>${esc(x.date)} · ${esc(x.label||(x.kind==='cumulative'?'本年度累計':'單季'))}</span><b>${num(x.value).toFixed(2)}</b></div>`).join('')||(ordered.some(x=>x.kind==='cumulative')?'<div>歷史單季 EPS 補抓中，目前只有本年度累計</div>':'<div>沒有 EPS 資料</div>');
 }
 function render(){
  if(!snapshot)return;
