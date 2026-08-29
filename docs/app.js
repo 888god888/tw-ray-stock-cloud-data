@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let snapshot=null,selected=null,screenedStocks=null,activeConditions=[],builderReady=false,mainControlsReady=false,conditionsHydrated=false;
-let selectedIndustries=new Set(),availableIndustries=[],detailHistoryActive=false,touchStart=null;
+let selectedIndustries=new Set(),availableIndustries=[],detailHistoryActive=false,touchStart=null,listScrollY=0;
 const ACTIVE_CONDITIONS_KEY='tw-stock-mobile-conditions';
 const ACTIVE_CONDITIONS_DB_KEY='active-conditions-v1';
 const SAVED_STRATEGIES_KEY='tw-stock-mobile-saved-strategies-v1';
@@ -11,6 +11,7 @@ const CLOUD_DATA=new URL('./data/',window.location.href).href;
 const CLOUD_MANIFEST=CLOUD_DATA+'manifest.json';
 const CLOUD_SNAPSHOT=CLOUD_DATA+'snapshot.json.gz';
 const CLOUD_HASH_KEY='tw-stock-pwa-snapshot-sha256';
+const SCREEN_STATE_KEY='tw-stock-pwa-screen-state-v1';
 
 const SORT_SPECS=[
  ['change_desc','漲幅高 → 低'],['change_asc','跌幅大 → 小'],
@@ -158,7 +159,7 @@ function setupConditionBuilder(){
   if(!conditionsHydrated)activeConditions=loadConditions();
   const cats=Array.from(new Set(CONDITION_SPECS.map(s=>s.category)));$('conditionCategory').innerHTML=cats.map(x=>`<option>${x}</option>`).join('');
   $('conditionCategory').onchange=refreshConditionTypes;$('conditionType').onchange=refreshConditionParams;
-  $('addCondition').onclick=addCondition;$('runScreen').onclick=runScreen;$('clearConditions').onclick=()=>{activeConditions=[];screenedStocks=null;saveConditions();renderActiveConditions();render()};
+  $('addCondition').onclick=addCondition;$('runScreen').onclick=()=>runScreen(false);$('clearConditions').onclick=()=>{activeConditions=[];screenedStocks=null;clearScreenState();saveConditions();renderActiveConditions();render()};
   $('saveStrategy').onclick=saveNamedStrategy;$('loadStrategy').onclick=loadNamedStrategy;$('deleteStrategy').onclick=deleteNamedStrategy;
   $('savedStrategy').onchange=()=>{if($('savedStrategy').value){$('strategyName').value=$('savedStrategy').value;loadNamedStrategy()}};
   builderReady=true;refreshConditionTypes();renderActiveConditions();
@@ -220,10 +221,21 @@ async function deleteNamedStrategy(){
 function conditionSummary(c){const s=CONDITION_SPECS.find(x=>x.id===c.id);return s?`[${s.category}] ${s.label}（${s.params.map(p=>`${p[1]}=${c.params[p[0]]}`).join('、')}）`:c.id}
 function renderActiveConditions(){$('activeConditions').innerHTML=activeConditions.map((c,i)=>`<li><span>${esc(conditionSummary(c))}</span><button data-remove="${i}">×</button></li>`).join('')||'<li><span>尚未加入條件；不加條件會顯示全部股票</span></li>';$('activeConditions').querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{activeConditions.splice(Number(b.dataset.remove),1);saveConditions();renderActiveConditions()})}
 
-function runScreen(){
+function runScreen(silent=false){
  if(!snapshot)return;const result=[];
  snapshot.stocks.forEach(s=>{const details=[];let ok=true;for(const c of activeConditions){const r=evaluateCondition(s,c);const spec=CONDITION_SPECS.find(x=>x.id===c.id);details.push(`${r.ok?'✓':'✗'} ${spec?spec.label:c.id}：${r.detail}`);if(!r.ok){ok=false;break}}if(ok){s._screenDetails=details;s.match=activeConditions.length?`${activeConditions.length}/${activeConditions.length}`:'—';result.push(s)}});
- screenedStocks=result;render();showMessage(`篩選完成：${result.length} / ${snapshot.stocks.length} 檔符合`,true);
+ screenedStocks=result;render();saveScreenState(window.scrollY||listScrollY);if(!silent)showMessage(`篩選完成：${result.length} / ${snapshot.stocks.length} 檔符合`,true);
+}
+
+function clearScreenState(){try{sessionStorage.removeItem(SCREEN_STATE_KEY)}catch(e){}}
+function saveScreenState(scrollY=listScrollY){
+ if(!snapshot||screenedStocks===null)return;
+ try{sessionStorage.setItem(SCREEN_STATE_KEY,JSON.stringify({tradeDate:snapshot.latest_trade_date||'',ids:screenedStocks.map(s=>s.stock_id),scrollY:Math.max(0,Number(scrollY)||0)}))}catch(e){}
+}
+function restoreScreenState(){
+ if(!snapshot)return false;let state=null;try{state=JSON.parse(sessionStorage.getItem(SCREEN_STATE_KEY)||'null')}catch(e){}
+ if(!state||!Array.isArray(state.ids))return false;
+ const byId=new Map(snapshot.stocks.map(s=>[s.stock_id,s]));screenedStocks=state.ids.map(id=>byId.get(String(id))).filter(Boolean);listScrollY=Math.max(0,Number(state.scrollY)||0);render();requestAnimationFrame(()=>window.scrollTo(0,listScrollY));return true;
 }
 
 function evaluateCondition(s,c){
@@ -294,11 +306,11 @@ function render(){
  $('stockList').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>openDetail(rows.find(s=>s.stock_id===b.dataset.id)));
 }
 function openDetail(s){
- if(!s)return;selected=s;$('detail').hidden=false;document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
+ if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
  $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
-function hideDetail(){if($('detail').hidden)return;$('detail').hidden=true;document.body.classList.remove('detail-open');selected=null;detailHistoryActive=false;touchStart=null}
+function hideDetail(){if($('detail').hidden)return;const restoreY=listScrollY;$('detail').hidden=true;document.body.classList.remove('detail-open');document.body.style.position='';document.body.style.top='';document.body.style.width='';selected=null;detailHistoryActive=false;touchStart=null;requestAnimationFrame(()=>window.scrollTo(0,restoreY))}
 function requestCloseDetail(){if(detailHistoryActive&&history.state&&history.state.stockDetail)history.back();else hideDetail()}
 function tab(name){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id===`tab-${name}`));if(name==='price')setTimeout(drawCandle,20);if(name==='fund')setTimeout(drawRevenue,20)}
 function canvas(id,h=340){const c=$(id),d=devicePixelRatio||1,w=c.clientWidth||700;c.width=w*d;c.height=h*d;const x=c.getContext('2d');x.scale(d,d);return{x,w,h}}
@@ -324,7 +336,8 @@ $('backDetail').onclick=requestCloseDetail;$('closeDetail').onclick=requestClose
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('detail').onclick=e=>{if(e.target===$('detail'))$('closeDetail').click()};
 $('detailPanel').addEventListener('touchstart',e=>{const t=e.touches[0];touchStart=t&&t.clientX<=70?{x:t.clientX,y:t.clientY}:null},{passive:true});
 $('detailPanel').addEventListener('touchend',e=>{if(!touchStart)return;const t=e.changedTouches[0],dx=t.clientX-touchStart.x,dy=Math.abs(t.clientY-touchStart.y);touchStart=null;if(dx>=85&&dy<=70&&dx>dy*1.4)requestCloseDetail()},{passive:true});
-window.addEventListener('popstate',e=>{if(!$('detail').hidden){hideDetail();return}if(e.state&&e.state.stockDetail&&snapshot){const s=snapshot.stocks.find(x=>x.stock_id===String(e.state.stockDetail));if(s){detailHistoryActive=true;openDetail(s)}}});
+if('scrollRestoration'in history)history.scrollRestoration='manual';
+window.addEventListener('popstate',e=>{if(!$('detail').hidden){hideDetail();return}if(e.state&&e.state.stockDetail&&snapshot){const s=snapshot.stocks.find(x=>x.stock_id===String(e.state.stockDetail));if(s){detailHistoryActive=true;openDetail(s)}}else restoreScreenState()});
 function setupPwa(){
  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
  const standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
@@ -336,4 +349,4 @@ function setupPwa(){
  window.addEventListener('online',updateOnlineState);window.addEventListener('offline',updateOnlineState);updateOnlineState();
 }
 setupPwa();
-dbLoad().then(async v=>{await Promise.all([hydrateSavedStrategies().catch(()=>{}),hydrateActiveConditions().catch(()=>{})]);snapshot=v;setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)}).catch(async()=>{await Promise.all([hydrateSavedStrategies().catch(()=>{}),hydrateActiveConditions().catch(()=>{})]);setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)});
+dbLoad().then(async v=>{await Promise.all([hydrateSavedStrategies().catch(()=>{}),hydrateActiveConditions().catch(()=>{})]);snapshot=v;setup();restoreScreenState();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)}).catch(async()=>{await Promise.all([hydrateSavedStrategies().catch(()=>{}),hydrateActiveConditions().catch(()=>{})]);setup();restoreScreenState();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)});
