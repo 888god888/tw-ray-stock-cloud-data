@@ -883,25 +883,31 @@ class OfficialMarketClient:
                                          market: str) -> pd.DataFrame:
         typek = "sii" if market == "TWSE" else "otc"
         errors = []
-        # 新站的 AJAX 要求瀏覽器產生的參數，會直接中斷舊式 POST；先試仍可
-        # 接受傳統表單的官方舊入口，再以 OpenAPI 最新季快照備援。
-        try:
-            response = self._post(
-                f"{MOPS_LEGACY_BASE}/mops/web/ajax_t163sb04",
-                data={
-                    "encodeURIComponent": "1", "step": "1", "firstin": "1", "off": "1",
-                    "TYPEK": typek, "year": str(year - 1911), "season": str(quarter),
-                },
-                headers={"Referer": f"{MOPS_LEGACY_BASE}/mops/web/t163sb04"},
-            )
-            result = self.parse_income_statement_tables(
-                self._read_html_tables(response), year, quarter, market
-            )
-            if not result.empty:
-                return result
-            errors.append("MOPS 舊入口有回應，但沒有可解析資料")
-        except Exception as exc:
-            errors.append(f"MOPS 舊入口: {exc}")
+        form_data = {
+            "encodeURIComponent": "1", "step": "1", "firstin": "1", "off": "1",
+            "TYPEK": typek, "year": str(year - 1911), "season": str(quarter),
+        }
+        # mops.twse.com.tw 會阻擋 GitHub Actions 的歷史 AJAX POST，但官方的
+        # mopsov.twse.com.tw 查詢站仍提供相同的整季彙總報表。優先使用後者，
+        # 才能取得連續多季的累計 EPS；主站保留為備援。
+        for base, label in (
+            (MOPS_BASE, "MOPS 歷史入口"),
+            (MOPS_LEGACY_BASE, "MOPS 主站入口"),
+        ):
+            try:
+                response = self._post(
+                    f"{base}/mops/web/ajax_t163sb04",
+                    data=form_data,
+                    headers={"Referer": f"{base}/mops/web/t163sb04"},
+                )
+                result = self.parse_income_statement_tables(
+                    self._read_html_tables(response), year, quarter, market
+                )
+                if not result.empty:
+                    return result
+                errors.append(f"{label}有回應，但沒有可解析資料")
+            except Exception as exc:
+                errors.append(f"{label}: {exc}")
 
         # 官方「各產業 EPS 統計」一次涵蓋全市場及所有財報業別，是 GitHub
         # Actions 被 MOPS 歷史頁擋住時較穩定的最新季備援。
