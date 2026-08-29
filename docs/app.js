@@ -1,8 +1,10 @@
 const $=id=>document.getElementById(id);
-let snapshot=null,selected=null,screenedStocks=null,activeConditions=[],builderReady=false,mainControlsReady=false;
+let snapshot=null,selected=null,screenedStocks=null,activeConditions=[],builderReady=false,mainControlsReady=false,conditionsHydrated=false;
 let selectedIndustries=new Set(),availableIndustries=[],detailHistoryActive=false,touchStart=null;
 const ACTIVE_CONDITIONS_KEY='tw-stock-mobile-conditions';
+const ACTIVE_CONDITIONS_DB_KEY='active-conditions-v1';
 const SAVED_STRATEGIES_KEY='tw-stock-mobile-saved-strategies-v1';
+const SAVED_STRATEGIES_DB_KEY='saved-strategies-v1';
 const INDUSTRIES_KEY='tw-stock-mobile-industries-v1';
 const SORTS_KEY='tw-stock-mobile-sorts-v1';
 const CLOUD_DATA=new URL('./data/',window.location.href).href;
@@ -153,12 +155,12 @@ function updateIndustrySummary(){const n=selectedIndustries.size;$('industrySumm
 
 function setupConditionBuilder(){
  if(!builderReady){
-  activeConditions=loadConditions();
+  if(!conditionsHydrated)activeConditions=loadConditions();
   const cats=Array.from(new Set(CONDITION_SPECS.map(s=>s.category)));$('conditionCategory').innerHTML=cats.map(x=>`<option>${x}</option>`).join('');
   $('conditionCategory').onchange=refreshConditionTypes;$('conditionType').onchange=refreshConditionParams;
   $('addCondition').onclick=addCondition;$('runScreen').onclick=runScreen;$('clearConditions').onclick=()=>{activeConditions=[];screenedStocks=null;saveConditions();renderActiveConditions();render()};
   $('saveStrategy').onclick=saveNamedStrategy;$('loadStrategy').onclick=loadNamedStrategy;$('deleteStrategy').onclick=deleteNamedStrategy;
-  $('savedStrategy').onchange=()=>{if($('savedStrategy').value)$('strategyName').value=$('savedStrategy').value};
+  $('savedStrategy').onchange=()=>{if($('savedStrategy').value){$('strategyName').value=$('savedStrategy').value;loadNamedStrategy()}};
   builderReady=true;refreshConditionTypes();renderActiveConditions();
   refreshSavedStrategyOptions();
  }
@@ -167,33 +169,53 @@ function refreshConditionTypes(){const cat=$('conditionCategory').value;const sp
 function selectedSpec(){return CONDITION_SPECS.find(s=>s.id===$('conditionType').value)}
 function refreshConditionParams(){const spec=selectedSpec();if(!spec)return;$('conditionParams').innerHTML=spec.params.map(p=>{const [key,label,type,def,choices]=p;if(type==='choice')return `<label>${esc(label)}<select data-param="${key}">${choices.map(x=>`<option${x===def?' selected':''}>${esc(x)}</option>`).join('')}</select></label>`;return `<label>${esc(label)}<input data-param="${key}" type="number" step="${type==='int'?'1':'any'}" value="${def}"></label>`}).join('')}
 function addCondition(){const spec=selectedSpec();if(!spec)return;const params={};let invalid=false;spec.params.forEach(p=>{const el=$('conditionParams').querySelector(`[data-param="${p[0]}"]`);if(p[2]==='choice')params[p[0]]=el.value;else{const v=Number(el.value);if(!Number.isFinite(v))invalid=true;params[p[0]]=p[2]==='int'?Math.trunc(v):v}});if(invalid){showMessage('條件參數必須是數字');return}activeConditions.push({id:spec.id,params});saveConditions();renderActiveConditions()}
-function saveConditions(){localStorage.setItem(ACTIVE_CONDITIONS_KEY,JSON.stringify(activeConditions))}
-function loadConditions(){try{const x=JSON.parse(localStorage.getItem(ACTIVE_CONDITIONS_KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return []}}
+function readLocalConditions(){try{const raw=localStorage.getItem(ACTIVE_CONDITIONS_KEY);if(raw===null)return null;const x=JSON.parse(raw);return Array.isArray(x)?x:null}catch(e){return null}}
+function loadConditions(){return readLocalConditions()||[]}
+async function saveConditions(){
+ const copy=JSON.parse(JSON.stringify(activeConditions));
+ try{localStorage.setItem(ACTIVE_CONDITIONS_KEY,JSON.stringify(copy))}catch(e){}
+ await dbPut(ACTIVE_CONDITIONS_DB_KEY,copy).catch(()=>{});
+}
+async function hydrateActiveConditions(){
+ const local=readLocalConditions(),stored=await dbGet(ACTIVE_CONDITIONS_DB_KEY).catch(()=>null),fromDb=Array.isArray(stored)?stored:[];
+ activeConditions=JSON.parse(JSON.stringify(local!==null?local:fromDb));conditionsHydrated=true;
+ try{localStorage.setItem(ACTIVE_CONDITIONS_KEY,JSON.stringify(activeConditions))}catch(e){}
+ await dbPut(ACTIVE_CONDITIONS_DB_KEY,activeConditions).catch(()=>{});return activeConditions;
+}
 function readSavedStrategies(){try{const x=JSON.parse(localStorage.getItem(SAVED_STRATEGIES_KEY)||'[]');return Array.isArray(x)?x.filter(s=>s&&typeof s.name==='string'&&Array.isArray(s.conditions)):[]}catch(e){return []}}
-function writeSavedStrategies(items){localStorage.setItem(SAVED_STRATEGIES_KEY,JSON.stringify(items));dbPut('saved-strategies-v1',items).catch(()=>{})}
+async function writeSavedStrategies(items){
+ let localError=null,dbError=null;
+ try{localStorage.setItem(SAVED_STRATEGIES_KEY,JSON.stringify(items))}catch(e){localError=e}
+ try{await dbPut(SAVED_STRATEGIES_DB_KEY,items)}catch(e){dbError=e}
+ if(localError&&dbError)throw Error('瀏覽器拒絕儲存策略，請確認不是無痕模式且網站儲存空間未被停用');
+ return{local:!localError,indexedDb:!dbError};
+}
 async function hydrateSavedStrategies(){
- const local=readSavedStrategies(),stored=await dbGet('saved-strategies-v1').catch(()=>null),fromDb=Array.isArray(stored)?stored.filter(s=>s&&typeof s.name==='string'&&Array.isArray(s.conditions)):[],byName=new Map();
+ const local=readSavedStrategies(),stored=await dbGet(SAVED_STRATEGIES_DB_KEY).catch(()=>null),fromDb=Array.isArray(stored)?stored.filter(s=>s&&typeof s.name==='string'&&Array.isArray(s.conditions)):[],byName=new Map();
  local.concat(fromDb).forEach(item=>{const old=byName.get(item.name);if(!old||String(item.updated_at||'')>=String(old.updated_at||''))byName.set(item.name,item)});
- const merged=Array.from(byName.values());localStorage.setItem(SAVED_STRATEGIES_KEY,JSON.stringify(merged));await dbPut('saved-strategies-v1',merged).catch(()=>{});return merged;
+ const merged=Array.from(byName.values());try{localStorage.setItem(SAVED_STRATEGIES_KEY,JSON.stringify(merged))}catch(e){}await dbPut(SAVED_STRATEGIES_DB_KEY,merged).catch(()=>{});return merged;
 }
 function refreshSavedStrategyOptions(selectedName=''){
  const items=readSavedStrategies().sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant'));
  $('savedStrategy').innerHTML='<option value="">選擇已儲存策略</option>'+items.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}（${s.conditions.length}項）</option>`).join('');
  if(items.some(s=>s.name===selectedName))$('savedStrategy').value=selectedName;
 }
-function saveNamedStrategy(){
+async function saveNamedStrategy(){
  const name=$('strategyName').value.trim();if(!name){showMessage('請先輸入策略名稱');return}if(!activeConditions.length){showMessage('請先加入至少一個篩選條件');return}
- const items=readSavedStrategies(),copy=JSON.parse(JSON.stringify(activeConditions)),index=items.findIndex(s=>s.name===name);
+ const items=await hydrateSavedStrategies(),copy=JSON.parse(JSON.stringify(activeConditions)),index=items.findIndex(s=>s.name===name);
  const item={name,conditions:copy,updated_at:new Date().toISOString()};if(index>=0)items[index]=item;else items.push(item);
- writeSavedStrategies(items);refreshSavedStrategyOptions(name);showMessage(`策略「${name}」已儲存，共 ${copy.length} 項條件`,true);
+ try{await writeSavedStrategies(items);await hydrateSavedStrategies();refreshSavedStrategyOptions(name);showMessage(`策略「${name}」已儲存並驗證，共 ${copy.length} 項條件`,true)}catch(e){showMessage('策略儲存失敗：'+(e&&e.message?e.message:String(e)))}
 }
-function loadNamedStrategy(){
- const name=$('savedStrategy').value;if(!name){showMessage('請先選擇要載入的策略');return}const item=readSavedStrategies().find(s=>s.name===name);if(!item){showMessage('找不到這個策略');refreshSavedStrategyOptions();return}
- activeConditions=JSON.parse(JSON.stringify(item.conditions)).filter(c=>CONDITION_SPECS.some(s=>s.id===c.id));screenedStocks=null;saveConditions();renderActiveConditions();$('strategyName').value=name;runScreen();showMessage(`已載入策略「${name}」`,true);
+async function loadNamedStrategy(){
+ const name=$('savedStrategy').value;if(!name){showMessage('請先選擇要載入的策略');return}
+ await hydrateSavedStrategies();const item=readSavedStrategies().find(s=>s.name===name);if(!item){showMessage('找不到這個策略');refreshSavedStrategyOptions();return}
+ const restored=JSON.parse(JSON.stringify(item.conditions)).filter(c=>c&&CONDITION_SPECS.some(s=>s.id===c.id));
+ if(!restored.length){showMessage(`策略「${name}」沒有可辨識的條件，已保留目前設定`);return}
+ activeConditions=restored;screenedStocks=null;await saveConditions();renderActiveConditions();$('strategyName').value=name;refreshSavedStrategyOptions(name);runScreen();showMessage(`已載入策略「${name}」，共 ${restored.length} 項條件`,true);
 }
-function deleteNamedStrategy(){
+async function deleteNamedStrategy(){
  const name=$('savedStrategy').value;if(!name){showMessage('請先選擇要刪除的策略');return}if(!confirm(`確定刪除策略「${name}」？`))return;
- writeSavedStrategies(readSavedStrategies().filter(s=>s.name!==name));$('strategyName').value='';refreshSavedStrategyOptions();showMessage(`策略「${name}」已刪除`,true);
+ try{const items=await hydrateSavedStrategies();await writeSavedStrategies(items.filter(s=>s.name!==name));$('strategyName').value='';refreshSavedStrategyOptions();showMessage(`策略「${name}」已刪除`,true)}catch(e){showMessage('策略刪除失敗：'+(e&&e.message?e.message:String(e)))}
 }
 function conditionSummary(c){const s=CONDITION_SPECS.find(x=>x.id===c.id);return s?`[${s.category}] ${s.label}（${s.params.map(p=>`${p[1]}=${c.params[p[0]]}`).join('、')}）`:c.id}
 function renderActiveConditions(){$('activeConditions').innerHTML=activeConditions.map((c,i)=>`<li><span>${esc(conditionSummary(c))}</span><button data-remove="${i}">×</button></li>`).join('')||'<li><span>尚未加入條件；不加條件會顯示全部股票</span></li>';$('activeConditions').querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{activeConditions.splice(Number(b.dataset.remove),1);saveConditions();renderActiveConditions()})}
@@ -314,4 +336,4 @@ function setupPwa(){
  window.addEventListener('online',updateOnlineState);window.addEventListener('offline',updateOnlineState);updateOnlineState();
 }
 setupPwa();
-dbLoad().then(async v=>{await hydrateSavedStrategies().catch(()=>{});snapshot=v;setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)}).catch(async()=>{await hydrateSavedStrategies().catch(()=>{});setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)});
+dbLoad().then(async v=>{await Promise.all([hydrateSavedStrategies().catch(()=>{}),hydrateActiveConditions().catch(()=>{})]);snapshot=v;setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)}).catch(async()=>{await Promise.all([hydrateSavedStrategies().catch(()=>{}),hydrateActiveConditions().catch(()=>{})]);setup();if(navigator.onLine)setTimeout(()=>checkCloudLatest(true),800)});
