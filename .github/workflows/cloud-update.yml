@@ -2,10 +2,6 @@ name: 更新台股盤後資料
 
 on:
   workflow_dispatch:
-  schedule:
-  - cron: "17 10 * * 1-5"  # 台灣 18:17
-  - cron: "47 10 * * 1-5"  # 台灣 18:47，備援
-  - cron: "05 11 * * 1-5"  # 台灣 19:17，再備援
 
 permissions:
   contents: write
