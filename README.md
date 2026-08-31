@@ -1,6 +1,6 @@
 # 台股盤後雲端資料
 
-這個公開儲存庫每天在台北時間 20:30 由 GitHub Actions 更新 TWSE、TPEx 與
+這個公開儲存庫每天在台北時間 18:00 由 GitHub Actions 更新 TWSE、TPEx 與
 MOPS 官方盤後資料，並發布 Android App 使用的壓縮快照。
 
 - 第一次執行：建立至少 180 個交易日的完整資料庫。
@@ -19,7 +19,7 @@ MOPS 官方盤後資料，並發布 Android App 使用的壓縮快照。
 3. 第一次會下載完整歷史資料，時間明顯比之後的差異更新久。
 4. 成功後 Releases 會出現 `latest`；Android 1.1.0 即可按「更新最新資料」。
 
-排程預設為台北時間週一至週五 20:30。若官方資料源暫時維護，該次工作會失敗
+排程預設為台北時間週一至週五 18:00。若官方資料源暫時維護，該次工作會失敗
 並保留上一個可用 Release，不會讓手機下載到半套資料。
 ## iPhone PWA
 
@@ -32,9 +32,3 @@ MOPS 官方盤後資料，並發布 Android App 使用的壓縮快照。
 預定網址：`https://888god888.github.io/tw-ray-stock-cloud-data/`
 
 詳細設定請看 [`docs/README.md`](docs/README.md)。
-## License
-
-本專案原始程式碼採用 MIT License。
-
-股票行情、財報及其他市場資料的權利屬於原始資料提供者，
-包括 TWSE、TPEx 與 MOPS；這些資料不包含在本專案的 MIT 授權範圍內。
