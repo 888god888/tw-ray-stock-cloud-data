@@ -32,3 +32,9 @@ MOPS 官方盤後資料，並發布 Android App 使用的壓縮快照。
 預定網址：`https://888god888.github.io/tw-ray-stock-cloud-data/`
 
 詳細設定請看 [`docs/README.md`](docs/README.md)。
+## License
+
+本專案原始程式碼採用 MIT License。
+
+股票行情、財報及其他市場資料的權利屬於原始資料提供者，
+包括 TWSE、TPEx 與 MOPS；這些資料不包含在本專案的 MIT 授權範圍內。
