@@ -5,13 +5,10 @@ on:
   schedule:
     # 台灣時間 18:17、18:37、18:57
     - cron: "17,37,57 10 * * 1-5"
-
     # 台灣時間 19:17、19:37、19:57
     - cron: "17,37,57 11 * * 1-5"
-
     # 台灣時間 20:17、20:37、20:57
     - cron: "17,37,57 12 * * 1-5"
-
     # 台灣時間 21:17
     - cron: "17 13 * * 1-5"
 
@@ -27,7 +24,6 @@ jobs:
   check-and-trigger:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-
     steps:
       - name: 檢查並啟動盤後資料更新
         env:
@@ -35,15 +31,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           TODAY="$(TZ=Asia/Taipei date +%F)"
           CHECK_DIR="$RUNNER_TEMP/stock-schedule-check"
-
           mkdir -p "$CHECK_DIR"
-
           echo "台灣日期：$TODAY"
-
-          # 取得更新工作最近的執行狀態
           RUNS_JSON="$(
             gh run list \
               --repo "$GITHUB_REPOSITORY" \
@@ -51,7 +42,6 @@ jobs:
               --limit 20 \
               --json status,conclusion
           )"
-
           ACTIVE_COUNT="$(
             echo "$RUNS_JSON" |
             jq '[.[] | select(
@@ -62,52 +52,35 @@ jobs:
               .status == "requested"
             )] | length'
           )"
-
-          # 如果已經有更新正在執行或排隊，就不要重複啟動
           if [ "$ACTIVE_COUNT" -gt 0 ]; then
             echo "已有盤後資料更新正在執行或排隊，本次不重複啟動。"
             exit 0
           fi
-
           LAST_CONCLUSION="$(
             echo "$RUNS_JSON" |
             jq -r 'if length > 0 then .[0].conclusion // "" else "" end'
           )"
-
           GENERATED_DATE=""
-
-          # 下載最新 manifest，檢查今天是否已成功更新
           if gh release download latest \
             --repo "$GITHUB_REPOSITORY" \
             --pattern manifest.json \
             --dir "$CHECK_DIR" >/dev/null 2>&1
           then
-            GENERATED_AT="$(
-              jq -r '.generated_at // empty' "$CHECK_DIR/manifest.json"
-            )"
-
+            GENERATED_AT="$(jq -r '.generated_at // empty' "$CHECK_DIR/manifest.json")"
             if [ -n "$GENERATED_AT" ]; then
-              GENERATED_DATE="$(
-                TZ=Asia/Taipei date -d "$GENERATED_AT" +%F 2>/dev/null || true
-              )"
+              GENERATED_DATE="$(TZ=Asia/Taipei date -d "$GENERATED_AT" +%F 2>/dev/null || true)"
             fi
           fi
-
           echo "最新資料產生日期：${GENERATED_DATE:-尚無資料}"
           echo "最近更新結果：${LAST_CONCLUSION:-尚無紀錄}"
-
-          # 必須同時符合「今天產生」及「上次更新成功」才算完成
           if [ "$GENERATED_DATE" = "$TODAY" ] &&
              [ "$LAST_CONCLUSION" = "success" ]
           then
             echo "今天已成功更新，不需要再次執行。"
             exit 0
           fi
-
           echo "今天尚未成功更新，啟動更新台股盤後資料。"
-
           gh workflow run cloud-update.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
-
           echo "已送出更新工作。"

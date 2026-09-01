@@ -2,7 +2,6 @@ name: 部署 iPhone PWA
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
@@ -22,67 +21,53 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: 取得網站程式
         uses: actions/checkout@v5
-
       - name: 下載最新盤後資料到網站
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p docs/data
-
           gh release download latest \
             --repo "$GITHUB_REPOSITORY" \
             --pattern manifest.json \
             --dir docs/data \
             --clobber
-
           gh release download latest \
             --repo "$GITHUB_REPOSITORY" \
             --pattern snapshot.json.gz \
             --dir docs/data \
             --clobber
-
       - name: 檢查盤後資料
         run: |
           test -s docs/data/manifest.json
           test -s docs/data/snapshot.json.gz
-
           python -m json.tool docs/data/manifest.json >/dev/null
           gzip -t docs/data/snapshot.json.gz
-
           echo "準備部署的資料版本："
           python - <<'PY'
           import json
           from pathlib import Path
-
           manifest = json.loads(
               Path("docs/data/manifest.json").read_text(encoding="utf-8")
           )
-
           print("產生時間：", manifest.get("generated_at"))
           print("最新交易日：", manifest.get("latest_trade_date"))
           print("股票數量：", manifest.get("stock_count"))
           PY
-
       - name: 設定 GitHub Pages
         uses: actions/configure-pages@v6
-
       - name: 建立 Pages 部署檔
         uses: actions/upload-pages-artifact@v5
         with:
           path: docs
-
   deploy:
     needs: build
     runs-on: ubuntu-latest
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
       - name: 部署 GitHub Pages
         id: deployment

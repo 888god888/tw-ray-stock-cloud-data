@@ -15,27 +15,22 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 330
-
     steps:
       - name: 取得專案程式
         uses: actions/checkout@v5
-
       - name: 設定 Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: cloud-requirements.txt
-
       - name: 安裝套件
         run: pip install -r cloud-requirements.txt
-
       - name: 取得前次資料庫
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p data release
-
           if gh release download latest \
             --repo "$GITHUB_REPOSITORY" \
             --pattern tw_stock_cloud.sqlite3.gz \
@@ -45,23 +40,19 @@ jobs:
           else
             echo "尚無前次資料庫，將建立新資料庫。"
           fi
-
       - name: 更新官方資料並建立手機快照
         run: |
           python cloud_update.py \
             --db data/tw_stock_cloud.sqlite3 \
             --output release
-
       - name: 檢查輸出檔案
         run: |
           test -s release/manifest.json
           test -s release/snapshot.json.gz
           test -s release/tw_stock_cloud.sqlite3.gz
-
           python -m json.tool release/manifest.json >/dev/null
           gzip -t release/snapshot.json.gz
           gzip -t release/tw_stock_cloud.sqlite3.gz
-
       - name: 發布固定網址的最新資料
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,14 +66,12 @@ jobs:
               --title "台股最新盤後資料" \
               --notes "由 GitHub Actions 每晚自動更新"
           fi
-
           gh release upload latest \
             --repo "$GITHUB_REPOSITORY" \
             release/manifest.json \
             release/snapshot.json.gz \
             release/tw_stock_cloud.sqlite3.gz \
             --clobber
-
       - name: 啟動 iPhone PWA 部署
         env:
           GH_TOKEN: ${{ github.token }}
@@ -90,5 +79,4 @@ jobs:
           gh workflow run pages.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
-
           echo "已送出 iPhone PWA 部署工作。"
