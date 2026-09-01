@@ -93,6 +93,28 @@
       <nav class="tabs"><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
       <section id="tab-price" class="tab active"><div class="chart-tools"><b>K 線</b><select id="days"><option>60</option><option>120</option><option selected>180</option></select></div><canvas id="candle"></canvas></section>
       <section id="tab-fund" class="tab">
+        <div class="financial-title">
+          <h3>財務健診</h3>
+          <span id="financialLatest">—</span>
+        </div>
+        <div id="financialCoverage" class="financial-coverage"></div>
+        <div class="financial-health-grid">
+          <section class="health-card highlight-card">
+            <h4>財務亮點 <b id="highlightCount">0</b></h4>
+            <ul id="financialHighlights" class="health-list"></ul>
+          </section>
+          <section class="health-card risk-card">
+            <h4>財務風險 <b id="riskCount">0</b></h4>
+            <ul id="financialRisks" class="health-list"></ul>
+          </section>
+        </div>
+        <h3>關鍵財務指標</h3>
+        <div id="financialMetrics" class="financial-metrics"></div>
+        <details class="quarterly-detail">
+          <summary>查看近 12 季財務明細</summary>
+          <div class="table-scroll"><table class="financial-table"><thead><tr><th>季度</th><th>EPS</th><th>營收(億)</th><th>毛利率</th><th>營益率</th><th>負債比</th><th>營業現金流(億)</th></tr></thead><tbody id="financialRows"></tbody></table></div>
+        </details>
+        <p id="financialNote" class="financial-note"></p>
         <h3>近一年營收成長率</h3>
         <div class="revenue-legend"><span><i class="mom"></i>MoM（月增率）</span><span><i class="yoy"></i>YoY（年增率）</span></div>
         <canvas id="revenue" aria-label="近一年 MoM 與 YoY 百分比圖"></canvas>

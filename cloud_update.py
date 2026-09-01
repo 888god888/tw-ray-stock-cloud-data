@@ -71,9 +71,29 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
             financial_quarters=16,
             institutional_calendar_days=230,
         )
+        financial_backfill = sync_result.get("financial", {})
     else:
         print("Starting incremental official-data update", flush=True)
         sync_result = service.incremental_update(callback=_progress)
+        financial_backfill = {}
+        migration_key = "migration:financial-health-v1"
+        if not store.sync_succeeded(migration_key):
+            print("Backfilling 16 quarters of complete financial statements", flush=True)
+            financial_backfill = service.sync_financial_history(
+                quarters=16, callback=_progress
+            )
+            sync_result["financial_backfill"] = financial_backfill
+
+    # Existing cloud databases already have price history, so they do not enter
+    # the full bootstrap branch. This marker makes V9 backfill all statements
+    # once, then return to fast daily incremental updates.
+    if financial_backfill and not financial_backfill.get("errors"):
+        store.set_sync_state(
+            "migration:financial-health-v1", "ok",
+            int(financial_backfill.get("rows", 0))
+            + int(financial_backfill.get("derived_rows", 0)),
+            "16 季損益、資產負債、現金流量表已完成",
+        )
 
     rows = _market_rows(store)
     if not rows:

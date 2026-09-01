@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from financial_analysis import build_financial_analysis
 from screen_utils import latest_change_pct
 
 
@@ -154,6 +155,10 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
 
         paid_in_capital = capital_by_id.get(stock_id)
         fallback_close = price_records[-1]["close"] if price_records else 0.0
+        current_close = _float(row.get("close"), fallback_close)
+        financial_health = build_financial_analysis(
+            financial, close=current_close, max_quarters=12
+        )
         stocks.append({
             "stock_id": stock_id,
             "name": str(row.get("name", "")),
@@ -162,7 +167,7 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
                 paid_in_capital / 100_000_000 if paid_in_capital is not None
                 else _float(row.get("capital_billion"))
             ),
-            "close": _float(row.get("close"), fallback_close),
+            "close": current_close,
             "change_pct": (
                 latest_change_pct(prices) if prices is not None and len(prices) >= 2
                 else _float(row.get("change_pct"), 0.0)
@@ -173,13 +178,14 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
             "price_history": price_records,
             "monthly_revenue": revenue_records,
             "eps": eps_records,
+            "financial_health": financial_health,
             "institutional": _chip_records(chip, institutional_days),
         })
         if progress_callback:
             progress_callback(index, total, stock_id)
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "latest_trade_date": latest_trade_date,
         "strategy_name": "桌面版目前條件組合",

@@ -474,11 +474,18 @@ class DataStore:
             df = pd.read_sql_query(
                 """
                 SELECT date, stock_id, type, value, origin_name
-                FROM financial_statement WHERE stock_id = ?
-                ORDER BY date DESC LIMIT ?
+                FROM financial_statement
+                WHERE stock_id = ?
+                  AND date IN (
+                      SELECT DISTINCT date
+                      FROM financial_statement
+                      WHERE stock_id = ?
+                      ORDER BY date DESC
+                      LIMIT ?
+                  )
+                ORDER BY date DESC, type
                 """,
-                conn,
-                params=(str(stock_id), int(limit_quarters) * 8),
+                conn, params=(str(stock_id), str(stock_id), int(limit_quarters)),
             )
         return df.sort_values("date").reset_index(drop=True) if not df.empty else df
 

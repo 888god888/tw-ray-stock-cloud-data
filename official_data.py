@@ -788,9 +788,112 @@ class OfficialMarketClient:
         mappings = (
             (("基本每股盈餘",), (), "EPS_CUMULATIVE", "基本每股盈餘（累計）", 1.0),
             (("營業收入",), (), "OperatingRevenue", "營業收入", 1000.0),
+            (("淨收益",), ("利息",), "NetRevenue", "淨收益", 1000.0),
+            (("營業成本",), (), "OperatingCost", "營業成本", 1000.0),
             (("營業毛利",), (), "GrossProfit", "營業毛利", 1000.0),
+            (("營業費用",), (), "OperatingExpenses", "營業費用", 1000.0),
             (("營業利益",), (), "OperatingIncome", "營業利益", 1000.0),
+            (("稅前", "淨利"), (), "PretaxIncome", "稅前淨利", 1000.0),
+            (("稅前", "損益"), (), "PretaxIncome", "稅前損益", 1000.0),
+            (("稅前", "純益"), (), "PretaxIncome", "稅前純益", 1000.0),
             (("本期淨利",), (), "IncomeAfterTaxes", "本期淨利", 1000.0),
+            (("本期稅後淨利",), (), "IncomeAfterTaxes", "本期稅後淨利", 1000.0),
+            (("歸屬於母公司業主",), ("綜合損益",), "ParentNetIncome", "母公司業主淨利", 1000.0),
+        )
+        report_date = f"{year:04d}-{quarter * 3:02d}-{(31 if quarter in (1, 4) else 30):02d}"
+        output = []
+        seen = set()
+        for raw in tables:
+            df = _flatten_columns(raw)
+            code_col = _find_column(df.columns, ("公司代號",))
+            if not code_col:
+                continue
+            for _, row in df.iterrows():
+                code = _stock_code(row.get(code_col))
+                if not _is_common_stock(code):
+                    continue
+                for includes, excludes, item_type, origin_name, scale in mappings:
+                    col = _find_column(df.columns, includes, excludes)
+                    if not col or (code, item_type) in seen:
+                        continue
+                    value = _number(row.get(col))
+                    if value is None:
+                        continue
+                    seen.add((code, item_type))
+                    output.append({
+                        "stock_id": code,
+                        "date": report_date,
+                        "market": market,
+                        "type": item_type,
+                        "value": value * scale,
+                        "origin_name": origin_name,
+                    })
+        return pd.DataFrame(output)
+
+    @staticmethod
+    def parse_balance_sheet_tables(tables, year: int, quarter: int,
+                                   market: str) -> pd.DataFrame:
+        """Parse the official all-company balance-sheet summary.
+
+        The MOPS quarterly page contains separate tables for general, finance,
+        securities, holding and insurance companies.  We intentionally map
+        only common concepts here; unavailable concepts remain missing rather
+        than being guessed from an industry-specific field.
+        """
+        mappings = (
+            (("現金及約當現金",), (), "CashAndCashEquivalents", "現金及約當現金", 1000.0),
+            (("流動資產",), ("非流動",), "CurrentAssets", "流動資產", 1000.0),
+            (("非流動資產",), (), "NoncurrentAssets", "非流動資產", 1000.0),
+            (("資產總",), (), "TotalAssets", "資產總額", 1000.0),
+            (("流動負債",), ("非流動",), "CurrentLiabilities", "流動負債", 1000.0),
+            (("非流動負債",), (), "NoncurrentLiabilities", "非流動負債", 1000.0),
+            (("負債總",), (), "TotalLiabilities", "負債總額", 1000.0),
+            (("股本",), ("待註銷", "預收", "庫藏"), "CapitalStock", "股本", 1000.0),
+            (("保留盈餘",), (), "RetainedEarnings", "保留盈餘", 1000.0),
+            (("歸屬於母公司業主", "權益"), (), "ParentEquity", "母公司業主權益", 1000.0),
+            (("權益總",), (), "TotalEquity", "權益總額", 1000.0),
+            (("每股參考淨值",), (), "BookValuePerShare", "每股參考淨值", 1.0),
+        )
+        report_date = f"{year:04d}-{quarter * 3:02d}-{(31 if quarter in (1, 4) else 30):02d}"
+        output = []
+        seen = set()
+        for raw in tables:
+            df = _flatten_columns(raw)
+            code_col = _find_column(df.columns, ("公司代號",))
+            if not code_col:
+                continue
+            for _, row in df.iterrows():
+                code = _stock_code(row.get(code_col))
+                if not _is_common_stock(code):
+                    continue
+                for includes, excludes, item_type, origin_name, scale in mappings:
+                    col = _find_column(df.columns, includes, excludes)
+                    if not col or (code, item_type) in seen:
+                        continue
+                    value = _number(row.get(col))
+                    if value is None:
+                        continue
+                    seen.add((code, item_type))
+                    output.append({
+                        "stock_id": code,
+                        "date": report_date,
+                        "market": market,
+                        "type": item_type,
+                        "value": value * scale,
+                        "origin_name": origin_name,
+                    })
+        return pd.DataFrame(output)
+
+    @staticmethod
+    def parse_cash_flow_tables(tables, year: int, quarter: int,
+                               market: str) -> pd.DataFrame:
+        """Parse cumulative quarterly cash-flow summaries from MOPS."""
+        mappings = (
+            (("營業活動", "淨現金流入"), (), "OperatingCashFlow", "營業活動淨現金流", 1000.0),
+            (("投資活動", "淨現金流入"), (), "InvestingCashFlow", "投資活動淨現金流", 1000.0),
+            (("籌資活動", "淨現金流入"), (), "FinancingCashFlow", "籌資活動淨現金流", 1000.0),
+            (("本期現金及約當現金增加",), (), "NetCashChange", "現金及約當現金增加數", 1000.0),
+            (("期末現金及約當現金餘額",), (), "EndingCash", "期末現金及約當現金", 1000.0),
         )
         report_date = f"{year:04d}-{quarter * 3:02d}-{(31 if quarter in (1, 4) else 30):02d}"
         output = []
@@ -881,8 +984,28 @@ class OfficialMarketClient:
 
     def fetch_quarterly_income_statement(self, year: int, quarter: int,
                                          market: str) -> pd.DataFrame:
+        return self._fetch_quarterly_statement(year, quarter, market, "income")
+
+    def fetch_quarterly_balance_sheet(self, year: int, quarter: int,
+                                      market: str) -> pd.DataFrame:
+        return self._fetch_quarterly_statement(year, quarter, market, "balance")
+
+    def fetch_quarterly_cash_flow(self, year: int, quarter: int,
+                                  market: str) -> pd.DataFrame:
+        return self._fetch_quarterly_statement(year, quarter, market, "cashflow")
+
+    def _fetch_quarterly_statement(self, year: int, quarter: int,
+                                   market: str, statement: str) -> pd.DataFrame:
         typek = "sii" if market == "TWSE" else "otc"
         errors = []
+        reports = {
+            "income": ("t163sb04", self.parse_income_statement_tables, "綜合損益表"),
+            "balance": ("t163sb05", self.parse_balance_sheet_tables, "資產負債表"),
+            "cashflow": ("t163sb20", self.parse_cash_flow_tables, "現金流量表"),
+        }
+        if statement not in reports:
+            raise ValueError(f"未知財報類型: {statement}")
+        report_id, parser, report_name = reports[statement]
         form_data = {
             "encodeURIComponent": "1", "step": "1", "firstin": "1", "off": "1",
             "TYPEK": typek, "year": str(year - 1911), "season": str(quarter),
@@ -896,13 +1019,11 @@ class OfficialMarketClient:
         ):
             try:
                 response = self._post(
-                    f"{base}/mops/web/ajax_t163sb04",
+                    f"{base}/mops/web/ajax_{report_id}",
                     data=form_data,
-                    headers={"Referer": f"{base}/mops/web/t163sb04"},
+                    headers={"Referer": f"{base}/mops/web/{report_id}"},
                 )
-                result = self.parse_income_statement_tables(
-                    self._read_html_tables(response), year, quarter, market
-                )
+                result = parser(self._read_html_tables(response), year, quarter, market)
                 if not result.empty:
                     return result
                 errors.append(f"{label}有回應，但沒有可解析資料")
@@ -911,18 +1032,19 @@ class OfficialMarketClient:
 
         # 官方「各產業 EPS 統計」一次涵蓋全市場及所有財報業別，是 GitHub
         # Actions 被 MOPS 歷史頁擋住時較穩定的最新季備援。
-        try:
-            latest = self.fetch_latest_eps_summary(market)
-            report_year = pd.to_datetime(latest["date"]).dt.year if not latest.empty else pd.Series(dtype=int)
-            report_quarter = pd.to_datetime(latest["date"]).dt.quarter if not latest.empty else pd.Series(dtype=int)
-            matched = latest[(report_year == year) & (report_quarter == quarter)]
-            if not matched.empty:
-                return matched.reset_index(drop=True)
-            errors.append("OpenAPI 可連線，但最新一期不是指定季度")
-        except Exception as exc:
-            errors.append(f"OpenAPI: {exc}")
+        if statement == "income":
+            try:
+                latest = self.fetch_latest_eps_summary(market)
+                report_year = pd.to_datetime(latest["date"]).dt.year if not latest.empty else pd.Series(dtype=int)
+                report_quarter = pd.to_datetime(latest["date"]).dt.quarter if not latest.empty else pd.Series(dtype=int)
+                matched = latest[(report_year == year) & (report_quarter == quarter)]
+                if not matched.empty:
+                    return matched.reset_index(drop=True)
+                errors.append("OpenAPI 可連線，但最新一期不是指定季度")
+            except Exception as exc:
+                errors.append(f"OpenAPI: {exc}")
         raise OfficialDataError(
-            f"{market} {year}Q{quarter} 綜合損益表下載失敗：" + "；".join(errors)
+            f"{market} {year}Q{quarter} {report_name}下載失敗：" + "；".join(errors)
         )
 
 
@@ -1182,24 +1304,47 @@ class OfficialDataService:
             "errors": errors, "jobs": total_jobs,
         }
 
-    def _rebuild_quarterly_eps(self):
+    def _rebuild_quarterly_flows(self):
+        """Convert year-to-date statement values into stand-alone quarters."""
+        type_mappings = {
+            "EPS_CUMULATIVE": ("EPS", "基本每股盈餘（單季，由累計值換算）"),
+            "OperatingRevenue": ("OperatingRevenueQuarter", "單季營業收入（由累計值換算）"),
+            "NetRevenue": ("NetRevenueQuarter", "單季淨收益（由累計值換算）"),
+            "OperatingCost": ("OperatingCostQuarter", "單季營業成本（由累計值換算）"),
+            "GrossProfit": ("GrossProfitQuarter", "單季營業毛利（由累計值換算）"),
+            "OperatingExpenses": ("OperatingExpensesQuarter", "單季營業費用（由累計值換算）"),
+            "OperatingIncome": ("OperatingIncomeQuarter", "單季營業利益（由累計值換算）"),
+            "PretaxIncome": ("PretaxIncomeQuarter", "單季稅前淨利（由累計值換算）"),
+            "IncomeAfterTaxes": ("IncomeAfterTaxesQuarter", "單季稅後淨利（由累計值換算）"),
+            "ParentNetIncome": ("ParentNetIncomeQuarter", "單季母公司業主淨利（由累計值換算）"),
+            "OperatingCashFlow": ("OperatingCashFlowQuarter", "單季營業現金流（由累計值換算）"),
+            "InvestingCashFlow": ("InvestingCashFlowQuarter", "單季投資現金流（由累計值換算）"),
+            "FinancingCashFlow": ("FinancingCashFlowQuarter", "單季籌資現金流（由累計值換算）"),
+            "NetCashChange": ("NetCashChangeQuarter", "單季現金增減（由累計值換算）"),
+        }
         with self.store.connect() as conn:
             cumulative = pd.read_sql_query(
-                """SELECT stock_id, date, market, value
-                   FROM financial_statement WHERE type='EPS_CUMULATIVE'
-                   ORDER BY stock_id, date""",
+                f"""SELECT stock_id, date, market, type, value
+                    FROM financial_statement
+                    WHERE type IN ({','.join('?' for _ in type_mappings)})
+                    ORDER BY stock_id, type, date""",
                 conn,
+                params=tuple(type_mappings),
             )
-            conn.execute("DELETE FROM financial_statement WHERE type='EPS'")
+            conn.executemany(
+                "DELETE FROM financial_statement WHERE type = ?",
+                [(derived,) for derived, _ in type_mappings.values()],
+            )
         if cumulative.empty:
             return 0
         cumulative["date"] = pd.to_datetime(cumulative["date"])
         cumulative["year"] = cumulative["date"].dt.year
         cumulative["quarter"] = cumulative["date"].dt.quarter
         output = []
-        for (stock_id, year), group in cumulative.groupby(["stock_id", "year"]):
+        for (stock_id, raw_type, year), group in cumulative.groupby(["stock_id", "type", "year"]):
             values = {int(r.quarter): float(r.value) for r in group.itertuples() if pd.notna(r.value)}
             market = str(group.iloc[-1]["market"])
+            derived_type, origin_name = type_mappings[str(raw_type)]
             for quarter in sorted(values):
                 if quarter == 1:
                     value = values[quarter]
@@ -1210,10 +1355,14 @@ class OfficialDataService:
                 report_date = group[group["quarter"] == quarter]["date"].iloc[-1].strftime("%Y-%m-%d")
                 output.append({
                     "stock_id": stock_id, "date": report_date, "market": market,
-                    "type": "EPS", "value": value,
-                    "origin_name": "基本每股盈餘（單季，由累計值換算）",
+                    "type": derived_type, "value": value,
+                    "origin_name": origin_name,
                 })
         return self.store.upsert_financial_statements(pd.DataFrame(output))
+
+    def _rebuild_quarterly_eps(self):
+        """Backward-compatible wrapper retained for older callers."""
+        return self._rebuild_quarterly_flows()
 
     def sync_financial_history(self, quarters: int = 12, callback: ProgressCallback = None,
                                stop_event=None) -> dict:
@@ -1226,26 +1375,48 @@ class OfficialDataService:
             end_year -= 1
             end_q = 4
         periods = _quarter_sequence(end_year, end_q, max(quarters, 8))
-        jobs = [(y, q, market) for y, q in periods for market in ("TWSE", "TPEx")]
+        statements = (
+            ("income", "綜合損益表", self.client.fetch_quarterly_income_statement),
+            ("balance", "資產負債表", self.client.fetch_quarterly_balance_sheet),
+            ("cashflow", "現金流量表", self.client.fetch_quarterly_cash_flow),
+        )
+        jobs = [
+            (y, q, market, statement, label, fetcher)
+            for y, q in periods
+            for market in ("TWSE", "TPEx")
+            for statement, label, fetcher in statements
+        ]
         rows_written = errors = 0
-        for idx, (year, quarter, market) in enumerate(jobs, 1):
+        statement_rows = {name: 0 for name, _, _ in statements}
+        for idx, (year, quarter, market, statement, label, fetcher) in enumerate(jobs, 1):
             if self._stopped(stop_event):
                 break
-            # v2 會重新嘗試舊資料庫曾被不完整一般業 OpenAPI 標記成功的季度。
-            key = f"financial:v2:{market}:{year}Q{quarter}"
+            # v3 將三張報表分開記錄，某張失敗時下次可以單獨重試。
+            key = f"financial:v3:{statement}:{market}:{year}Q{quarter}"
             if self.store.sync_succeeded(key):
-                self._emit(callback, f"略過已下載 {market} {year}Q{quarter} 財報", idx, len(jobs))
+                self._emit(callback, f"略過已下載 {market} {year}Q{quarter} {label}", idx, len(jobs))
                 continue
             try:
-                df = self.client.fetch_quarterly_income_statement(year, quarter, market)
-                rows_written += self.store.upsert_financial_statements(df)
+                df = fetcher(year, quarter, market)
+                written = self.store.upsert_financial_statements(df)
+                rows_written += written
+                statement_rows[statement] += written
                 self.store.set_sync_state(key, "ok", len(df))
             except Exception as exc:
                 errors += 1
                 self.store.set_sync_state(key, "error", 0, str(exc))
-            self._emit(callback, f"財報 {market} {year}Q{quarter}", idx, len(jobs))
-        eps_rows = self._rebuild_quarterly_eps()
-        return {"rows": rows_written, "eps_rows": eps_rows, "errors": errors, "jobs": len(jobs)}
+            self._emit(callback, f"財報 {market} {year}Q{quarter} {label}", idx, len(jobs))
+        derived_rows = self._rebuild_quarterly_flows()
+        return {
+            "rows": rows_written,
+            "derived_rows": derived_rows,
+            "eps_rows": derived_rows,
+            "income_rows": statement_rows["income"],
+            "balance_rows": statement_rows["balance"],
+            "cashflow_rows": statement_rows["cashflow"],
+            "errors": errors,
+            "jobs": len(jobs),
+        }
 
     def initialise(self, callback: ProgressCallback = None, stop_event=None,
                    price_calendar_days: int = 365, revenue_months: int = 30,

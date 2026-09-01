@@ -290,6 +290,25 @@ function compareStocks(key,a,b){
  const cmp={change_desc:()=>number(b.change_pct,a.change_pct),change_asc:()=>number(a.change_pct,b.change_pct),industry_asc:()=>text(a.industry,b.industry),industry_desc:()=>text(b.industry,a.industry),capital_desc:()=>number(b.capital_billion,a.capital_billion),capital_asc:()=>number(a.capital_billion,b.capital_billion),volume_desc:()=>number(b.volume_lots,a.volume_lots),volume_asc:()=>number(a.volume_lots,b.volume_lots),price_desc:()=>number(b.close,a.close),price_asc:()=>number(a.close,b.close),code_asc:()=>text(a.stock_id,b.stock_id),code_desc:()=>text(b.stock_id,a.stock_id)};
  return cmp[key]?cmp[key]():0;
 }
+function quarterLabel(date){
+ const text=String(date||''),m=text.match(/^(\d{4})-(\d{2})/);if(!m)return text||'—';
+ const q=Math.max(1,Math.min(4,Math.ceil(Number(m[2])/3)));return `${m[1]} Q${q}`;
+}
+function moneyInBillion(value){return valid(value)?fmt(num(value)/100000000,2):'—'}
+function renderFinancialHealth(health){
+ health=health&&typeof health==='object'?health:{};
+ const coverage=health.coverage||{},highlights=Array.isArray(health.highlights)?health.highlights:[],risks=Array.isArray(health.risks)?health.risks:[],metrics=Array.isArray(health.metrics)?health.metrics:[],quarters=Array.isArray(health.quarters)?health.quarters:[];
+ $('financialLatest').textContent=health.latest_date?`最新季報 ${quarterLabel(health.latest_date)}`:'尚無完整季報';
+ const coverageItems=[['income','損益表','income_quarters'],['balance','資產負債表','balance_quarters'],['cashflow','現金流量表','cashflow_quarters']];
+ $('financialCoverage').innerHTML=coverageItems.map(([key,label,count])=>`<span class="${coverage[key]?'ok':'missing'}">${coverage[key]?'✓':'—'} ${label}${coverage[key]&&valid(coverage[count])?` ${num(coverage[count])}季`:''}</span>`).join('');
+ const signalHtml=(items,empty)=>items.length?items.map(item=>`<li><b>${esc(item.title||'')}</b><span>${esc(item.detail||'')}</span></li>`).join(''):`<li class="empty-signal">${esc(empty)}</li>`;
+ $('highlightCount').textContent=String(highlights.length);$('riskCount').textContent=String(risks.length);
+ $('financialHighlights').innerHTML=signalHtml(highlights,'目前沒有符合通用亮點門檻，或資料仍不足。');
+ $('financialRisks').innerHTML=signalHtml(risks,'目前沒有觸發通用風險門檻；不代表完全沒有風險。');
+ $('financialMetrics').innerHTML=metrics.length?metrics.map(item=>`<div><span>${esc(item.label||'')}</span><b>${fmt(item.value,item.unit==='元'?2:1)}${item.unit?` <small>${esc(item.unit)}</small>`:''}</b></div>`).join(''):'<div class="financial-empty">更新新版雲端資料後，這裡會顯示財務指標。</div>';
+ $('financialRows').innerHTML=quarters.slice().reverse().map(row=>`<tr><td>${esc(quarterLabel(row.date))}</td><td>${fmt(row.eps,2)}</td><td>${moneyInBillion(row.revenue)}</td><td>${valid(row.gross_margin_pct)?fmt(row.gross_margin_pct,1)+'%':'—'}</td><td>${valid(row.operating_margin_pct)?fmt(row.operating_margin_pct,1)+'%':'—'}</td><td>${valid(row.debt_ratio_pct)?fmt(row.debt_ratio_pct,1)+'%':'—'}</td><td>${moneyInBillion(row.operating_cash_flow)}</td></tr>`).join('')||'<tr><td colspan="7">尚無季度財務明細，請等待下一次雲端更新。</td></tr>';
+ $('financialNote').textContent=health.calculation_note||'亮點與風險採通用規則計算，資料不足時不下判斷；提示僅供研究，不是投資建議。';
+}
 function renderEps(items){
  const ordered=sorted(items),quarterly=ordered.filter(x=>x.kind!=='cumulative');
  const values=(quarterly.length?quarterly.slice(-4):ordered.filter(x=>x.kind==='cumulative').slice(-1)).reverse();
@@ -308,7 +327,7 @@ function render(){
 function openDetail(s){
  if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
- $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
+ $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderFinancialHealth(s.financial_health);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
 function hideDetail(){if($('detail').hidden)return;const restoreY=listScrollY;$('detail').hidden=true;document.body.classList.remove('detail-open');document.body.style.position='';document.body.style.top='';document.body.style.width='';selected=null;detailHistoryActive=false;touchStart=null;requestAnimationFrame(()=>window.scrollTo(0,restoreY))}
 function requestCloseDetail(){if(detailHistoryActive&&history.state&&history.state.stockDetail)history.back();else hideDetail()}
