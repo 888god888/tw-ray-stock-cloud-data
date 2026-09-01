@@ -112,6 +112,12 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
         "strategy_name": "雲端完整市場資料（由手機設定條件）",
         "sync_mode": "initial" if needs_initial else "incremental",
     })
+    if snapshot.get("financial_analysis_error_count"):
+        print(
+            "WARNING: financial analysis skipped for "
+            f"{snapshot['financial_analysis_error_count']} stocks",
+            flush=True,
+        )
     json_path = write_mobile_snapshot(output_dir / "snapshot.json", snapshot)
     gzip_path = output_dir / "snapshot.json.gz"
     _gzip_file(json_path, gzip_path)

@@ -96,6 +96,7 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
         }
 
     stocks = []
+    financial_analysis_error_count = 0
     latest_trade_date = ""
     total = len(rows)
     for index, row in enumerate(rows, 1):
@@ -156,9 +157,24 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
         paid_in_capital = capital_by_id.get(stock_id)
         fallback_close = price_records[-1]["close"] if price_records else 0.0
         current_close = _float(row.get("close"), fallback_close)
-        financial_health = build_financial_analysis(
-            financial, close=current_close, max_quarters=12
-        )
+        try:
+            financial_health = build_financial_analysis(
+                financial, close=current_close, max_quarters=12
+            )
+        except Exception as exc:
+            # One company's unusual official statement must not discard the
+            # other ~2,000 stocks after a long cloud update.  Preserve an
+            # explicit per-stock error for diagnosis and continue exporting.
+            financial_analysis_error_count += 1
+            financial_health = {
+                "latest_date": "",
+                "coverage": {
+                    "income": False, "balance": False, "cashflow": False,
+                },
+                "metrics": [], "quarters": [], "highlights": [], "risks": [],
+                "calculation_note": "此股票財務健診計算異常，已保留其他股票資料。",
+                "analysis_error": f"{type(exc).__name__}: {exc}",
+            }
         stocks.append({
             "stock_id": stock_id,
             "name": str(row.get("name", "")),
@@ -191,6 +207,7 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
         "strategy_name": "桌面版目前條件組合",
         "conditions": [str(value) for value in (conditions or [])],
         "stock_count": len(stocks),
+        "financial_analysis_error_count": financial_analysis_error_count,
         "stocks": stocks,
     }
 

@@ -75,6 +75,10 @@ def _last_n(frame, column, count):
     if column not in frame:
         return []
     series = pd.to_numeric(frame[column], errors="coerce").dropna().tail(count)
+    # pandas regards +/-inf as non-null.  Ratios can become infinite when an
+    # official statement reports a zero denominator, so remove them before
+    # checking continuity or performing arithmetic.
+    series = series[series.map(lambda value: math.isfinite(float(value)))].tail(count)
     if len(series) < count:
         return []
     periods = [_quarter_ordinal(index) for index in series.index]
@@ -142,18 +146,24 @@ def build_financial_analysis(financial, close=None, max_quarters=12):
     net_income = frame[net_income_col] if net_income_col else pd.Series(index=frame.index, dtype=float)
     equity = frame[equity_col] if equity_col else pd.Series(index=frame.index, dtype=float)
 
-    frame["CalculatedGrossMargin"] = gross_profit / revenue * 100.0
-    frame["CalculatedOperatingMargin"] = operating_income / revenue * 100.0
-    frame["CalculatedNetMargin"] = net_income / revenue * 100.0
+    safe_revenue = revenue.where(revenue.abs() > 1e-12)
+    frame["CalculatedGrossMargin"] = gross_profit / safe_revenue * 100.0
+    frame["CalculatedOperatingMargin"] = operating_income / safe_revenue * 100.0
+    frame["CalculatedNetMargin"] = net_income / safe_revenue * 100.0
     if {"TotalLiabilities", "TotalAssets"}.issubset(frame.columns):
         frame["CalculatedDebtRatio"] = (
-            frame["TotalLiabilities"] / frame["TotalAssets"] * 100.0
+            frame["TotalLiabilities"]
+            / frame["TotalAssets"].where(frame["TotalAssets"].abs() > 1e-12)
+            * 100.0
         )
     else:
         frame["CalculatedDebtRatio"] = pd.Series(index=frame.index, dtype=float)
     if {"CurrentAssets", "CurrentLiabilities"}.issubset(frame.columns):
         frame["CalculatedCurrentRatio"] = (
-            frame["CurrentAssets"] / frame["CurrentLiabilities"]
+            frame["CurrentAssets"]
+            / frame["CurrentLiabilities"].where(
+                frame["CurrentLiabilities"].abs() > 1e-12
+            )
         )
     else:
         frame["CalculatedCurrentRatio"] = pd.Series(index=frame.index, dtype=float)
