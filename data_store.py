@@ -152,6 +152,18 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_institutional_buysell_date
                     ON institutional_buysell(date);
 
+                CREATE TABLE IF NOT EXISTS shareholding_distribution (
+                    stock_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    level INTEGER NOT NULL,
+                    holders INTEGER,
+                    shares INTEGER,
+                    ratio_pct REAL,
+                    PRIMARY KEY (stock_id, date, level)
+                );
+                CREATE INDEX IF NOT EXISTS idx_shareholding_distribution_date
+                    ON shareholding_distribution(date);
+
                 CREATE TABLE IF NOT EXISTS sync_state (
                     sync_key TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
@@ -345,6 +357,33 @@ class DataStore:
             conn.executemany(sql, self._records(work, columns))
         return len(work)
 
+    def upsert_shareholding_distribution(self, df: pd.DataFrame) -> int:
+        if df is None or df.empty:
+            return 0
+        columns = ["stock_id", "date", "level", "holders", "shares", "ratio_pct"]
+        work = df.copy()
+        for col in columns:
+            if col not in work:
+                work[col] = None
+        work = work.dropna(subset=["stock_id", "date", "level"])
+        work["stock_id"] = work["stock_id"].astype(str).str.strip()
+        work["date"] = pd.to_datetime(work["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        work["level"] = pd.to_numeric(work["level"], errors="coerce")
+        work = work.dropna(subset=["date", "level"])
+        work["level"] = work["level"].astype(int)
+        work = work.drop_duplicates(["stock_id", "date", "level"], keep="last")
+        sql = """
+            INSERT INTO shareholding_distribution
+                (stock_id, date, level, holders, shares, ratio_pct)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(stock_id, date, level) DO UPDATE SET
+                holders=excluded.holders, shares=excluded.shares,
+                ratio_pct=excluded.ratio_pct
+        """
+        with self.connect() as conn:
+            conn.executemany(sql, self._records(work, columns))
+        return len(work)
+
     def set_sync_state(self, sync_key: str, status: str, row_count: int = 0, message: str = ""):
         with self.connect() as conn:
             conn.execute(
@@ -375,7 +414,8 @@ class DataStore:
                 WHERE status = 'error'
                   AND (sync_key LIKE 'revenue:%'
                        OR sync_key LIKE 'financial:%'
-                       OR sync_key LIKE 'institutional:%')
+                       OR sync_key LIKE 'institutional:%'
+                       OR sync_key LIKE 'shareholding:%')
                 ORDER BY updated_at DESC
                 LIMIT ?
                 """,
@@ -519,6 +559,27 @@ class DataStore:
             frames.append(frame)
         return pd.concat(frames, ignore_index=True).sort_values(["date", "name"]).reset_index(drop=True)
 
+    def get_shareholding_distribution(self, stock_id: str,
+                                      limit_weeks: int = 16) -> pd.DataFrame:
+        with self.connect() as conn:
+            return pd.read_sql_query(
+                """
+                SELECT date, stock_id, level, holders, shares, ratio_pct
+                FROM shareholding_distribution
+                WHERE stock_id = ?
+                  AND date IN (
+                      SELECT DISTINCT date
+                      FROM shareholding_distribution
+                      WHERE stock_id = ?
+                      ORDER BY date DESC
+                      LIMIT ?
+                  )
+                ORDER BY date, level
+                """,
+                conn,
+                params=(str(stock_id), str(stock_id), max(int(limit_weeks), 1)),
+            )
+
     def coverage_summary(self) -> dict:
         with self.connect() as conn:
             stock_count = conn.execute("SELECT COUNT(*) FROM stock_info").fetchone()[0]
@@ -543,6 +604,10 @@ class DataStore:
                 """SELECT market, COUNT(*) FROM institutional_buysell
                    GROUP BY market"""
             ).fetchall())
+            shareholding_rows, shareholding_stocks, shareholding_min_date, shareholding_max_date = conn.execute(
+                """SELECT COUNT(*), COUNT(DISTINCT stock_id), MIN(date), MAX(date)
+                   FROM shareholding_distribution"""
+            ).fetchone()
         return {
             "stock_count": stock_count,
             "price_rows": price_rows,
@@ -562,5 +627,9 @@ class DataStore:
             "institutional_max_date": institutional_max_date,
             "institutional_twse_rows": int(institutional_market_rows.get("TWSE", 0)),
             "institutional_tpex_rows": int(institutional_market_rows.get("TPEx", 0)),
+            "shareholding_rows": shareholding_rows,
+            "shareholding_stocks": shareholding_stocks,
+            "shareholding_min_date": shareholding_min_date,
+            "shareholding_max_date": shareholding_max_date,
             "db_path": str(self.db_path),
         }

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from chip_analysis import build_chip_analysis
 from financial_analysis import build_financial_analysis
 from screen_utils import latest_change_pct
 
@@ -83,7 +84,7 @@ def _chip_records(chip_df, limit=60):
 def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None,
                           progress_callback=None, price_days=180,
                           revenue_months=12, financial_quarters=12,
-                          institutional_days=60):
+                          institutional_days=60, shareholding_weeks=12):
     """Export the current screened result set plus its mobile detail data."""
     rows = [dict(row) for row in (result_rows or [])]
     detail_cache = detail_cache or {}
@@ -97,6 +98,7 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
 
     stocks = []
     financial_analysis_error_count = 0
+    chip_analysis_error_count = 0
     latest_trade_date = ""
     total = len(rows)
     for index, row in enumerate(rows, 1):
@@ -112,6 +114,9 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
         )
         chip = store.get_institutional_buysell(
             stock_id, limit_days=max(int(institutional_days), 1)
+        )
+        shareholding = store.get_shareholding_distribution(
+            stock_id, limit_weeks=max(int(shareholding_weeks), 1)
         )
 
         price_records = []
@@ -157,6 +162,7 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
         paid_in_capital = capital_by_id.get(stock_id)
         fallback_close = price_records[-1]["close"] if price_records else 0.0
         current_close = _float(row.get("close"), fallback_close)
+        chip_records = _chip_records(chip, institutional_days)
         try:
             financial_health = build_financial_analysis(
                 financial, close=current_close, max_quarters=12
@@ -171,8 +177,24 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
                 "coverage": {
                     "income": False, "balance": False, "cashflow": False,
                 },
-                "metrics": [], "quarters": [], "highlights": [], "risks": [],
+                "metrics": [], "quarters": [], "highlights": [], "cautions": [],
+                "risks": [], "risk_level": "unknown", "risk_label": "資料異常",
+                "risk_score": None,
                 "calculation_note": "此股票財務健診計算異常，已保留其他股票資料。",
+                "analysis_error": f"{type(exc).__name__}: {exc}",
+            }
+        try:
+            chip_health = build_chip_analysis(
+                chip_records, distribution=shareholding,
+                price_records=price_records, max_weeks=shareholding_weeks,
+            )
+        except Exception as exc:
+            chip_analysis_error_count += 1
+            chip_health = {
+                "status": "unknown", "status_label": "資料異常", "score": 0,
+                "positive_signals": [], "cautions": [], "metrics": [], "weeks": [],
+                "coverage": {"institutional": False, "tdcc": False, "tdcc_weeks": 0},
+                "calculation_note": "此股票籌碼提示計算異常，已保留其他股票資料。",
                 "analysis_error": f"{type(exc).__name__}: {exc}",
             }
         stocks.append({
@@ -195,19 +217,21 @@ def build_mobile_snapshot(store, result_rows, detail_cache=None, conditions=None
             "monthly_revenue": revenue_records,
             "eps": eps_records,
             "financial_health": financial_health,
-            "institutional": _chip_records(chip, institutional_days),
+            "chip_analysis": chip_health,
+            "institutional": chip_records,
         })
         if progress_callback:
             progress_callback(index, total, stock_id)
 
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "latest_trade_date": latest_trade_date,
         "strategy_name": "桌面版目前條件組合",
         "conditions": [str(value) for value in (conditions or [])],
         "stock_count": len(stocks),
         "financial_analysis_error_count": financial_analysis_error_count,
+        "chip_analysis_error_count": chip_analysis_error_count,
         "stocks": stocks,
     }
 

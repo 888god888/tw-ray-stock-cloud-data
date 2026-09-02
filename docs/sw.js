@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tw-stock-pwa-v9';
+const CACHE_NAME = 'tw-stock-pwa-v10';
 const APP_SHELL = [
   './',
   './index.html',

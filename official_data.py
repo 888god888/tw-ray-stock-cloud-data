@@ -34,6 +34,7 @@ TWSE_INSTITUTIONAL_REPORT = "https://www.twse.com.tw/rwd/zh/fund/T86"
 TPEX_INSTITUTIONAL_REPORT = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade"
 MOPS_BASE = "https://mopsov.twse.com.tw"
 MOPS_LEGACY_BASE = "https://mops.twse.com.tw"
+TDCC_SHAREHOLDING = "https://opendata.tdcc.com.tw/getOD.ashx?id=1-5"
 
 ProgressCallback = Optional[Callable[[str, int, int], None]]
 
@@ -587,6 +588,44 @@ class OfficialMarketClient:
             return self.parse_tpex_institutional(payload, trade_date)
         raise ValueError(f"未知市場: {market}")
 
+    def fetch_shareholding_distribution(self) -> pd.DataFrame:
+        """Fetch TDCC's latest whole-market weekly holding-level snapshot."""
+        response = self._get(TDCC_SHAREHOLDING)
+        try:
+            raw = pd.read_csv(
+                io.BytesIO(response.content), encoding="utf-8-sig",
+                dtype={"證券代號": str},
+            )
+        except Exception as exc:
+            raise OfficialDataError(f"TDCC 集保股權分散表無法解析：{exc}") from exc
+        required = {
+            "資料日期", "證券代號", "持股分級", "人數", "股數",
+            "占集保庫存數比例%",
+        }
+        if not required.issubset(raw.columns):
+            raise OfficialDataError("TDCC 集保股權分散表欄位不完整")
+        result = pd.DataFrame({
+            "date": pd.to_datetime(
+                raw["資料日期"].astype(str), format="%Y%m%d", errors="coerce"
+            ).dt.strftime("%Y-%m-%d"),
+            "stock_id": raw["證券代號"].astype(str).str.strip(),
+            "level": pd.to_numeric(raw["持股分級"], errors="coerce"),
+            "holders": pd.to_numeric(raw["人數"], errors="coerce"),
+            "shares": pd.to_numeric(raw["股數"], errors="coerce"),
+            "ratio_pct": pd.to_numeric(
+                raw["占集保庫存數比例%"], errors="coerce"
+            ),
+        })
+        result = result[
+            result["stock_id"].map(_is_common_stock)
+            & result["level"].between(1, 17)
+        ].dropna(subset=["date", "level"])
+        result["level"] = result["level"].astype(int)
+        if result.empty:
+            raise OfficialDataError("TDCC 集保股權分散表沒有可用上市櫃股票")
+        return result.drop_duplicates(
+            ["stock_id", "date", "level"], keep="last"
+        ).reset_index(drop=True)
     @staticmethod
     def _read_html_tables(response: OfficialResponse):
         raw = response.content
@@ -1304,6 +1343,29 @@ class OfficialDataService:
             "errors": errors, "jobs": total_jobs,
         }
 
+    def sync_shareholding_distribution(self) -> dict:
+        try:
+            df = self.client.fetch_shareholding_distribution()
+        except Exception as exc:
+            self.store.set_sync_state(
+                "shareholding:TDCC:latest", "error", 0, str(exc)
+            )
+            return {"rows": 0, "date": "", "status": "error", "error": str(exc)}
+        latest_date = str(df["date"].max()) if not df.empty else ""
+        key = f"shareholding:TDCC:{latest_date}"
+        if latest_date and self.store.sync_succeeded(key):
+            return {"rows": 0, "date": latest_date, "status": "cached"}
+        try:
+            written = self.store.upsert_shareholding_distribution(df)
+            self.store.set_sync_state(key, "ok", written, "TDCC 每週股權分散表")
+            return {"rows": written, "date": latest_date, "status": "ok"}
+        except Exception as exc:
+            self.store.set_sync_state(key, "error", 0, str(exc))
+            return {
+                "rows": 0, "date": latest_date,
+                "status": "error", "error": str(exc),
+            }
+
     def _rebuild_quarterly_flows(self):
         """Convert year-to-date statement values into stand-alone quarters."""
         type_mappings = {
@@ -1435,6 +1497,9 @@ class OfficialDataService:
                 institutional_calendar_days, callback=callback, stop_event=stop_event
             )
         if not self._stopped(stop_event):
+            self._emit(callback, "下載 TDCC 每週大戶持股", 0, 1)
+            result["shareholding"] = self.sync_shareholding_distribution()
+        if not self._stopped(stop_event):
             result["revenue"] = self.sync_revenue_history(
                 revenue_months, callback=callback, stop_event=stop_event
             )
@@ -1463,6 +1528,9 @@ class OfficialDataService:
         result["institutional"] = self.sync_institutional_history(
             calendar_days=institutional_days, callback=callback, stop_event=stop_event
         )
+        if self._stopped(stop_event):
+            return result
+        result["shareholding"] = self.sync_shareholding_distribution()
         if self._stopped(stop_event):
             return result
         # Retry recent periods because official publication dates differ by

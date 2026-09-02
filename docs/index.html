@@ -95,7 +95,7 @@
       <section id="tab-fund" class="tab">
         <div class="financial-title">
           <h3>財務健診</h3>
-          <span id="financialLatest">—</span>
+          <div><b id="financialRiskBadge" class="health-badge unknown">資料不足</b><span id="financialLatest">—</span></div>
         </div>
         <div id="financialCoverage" class="financial-coverage"></div>
         <div class="financial-health-grid">
@@ -106,6 +106,10 @@
           <section class="health-card risk-card">
             <h4>財務風險 <b id="riskCount">0</b></h4>
             <ul id="financialRisks" class="health-list"></ul>
+          </section>
+          <section class="health-card caution-card">
+            <h4>注意事項 <b id="cautionCount">0</b></h4>
+            <ul id="financialCautions" class="health-list"></ul>
           </section>
         </div>
         <h3>關鍵財務指標</h3>
@@ -121,7 +125,19 @@
         <div class="table-scroll"><table class="revenue-table"><thead><tr><th>月份</th><th>MoM 月增率</th><th>YoY 年增率</th></tr></thead><tbody id="revenueRows"></tbody></table></div>
         <h3 id="epsTitle">EPS</h3><div id="eps" class="eps"></div>
       </section>
-      <section id="tab-chip" class="tab"><h3>近 20 日法人買賣超（張）</h3><div id="chip"></div></section>
+      <section id="tab-chip" class="tab">
+        <div class="financial-title"><h3>籌碼重點</h3><b id="chipStatusBadge" class="health-badge unknown">資料不足</b></div>
+        <div id="chipCoverage" class="financial-coverage"></div>
+        <div class="financial-health-grid chip-health-grid">
+          <section class="health-card highlight-card"><h4>偏多訊號 <b id="chipPositiveCount">0</b></h4><ul id="chipPositive" class="health-list"></ul></section>
+          <section class="health-card caution-card"><h4>留意訊號 <b id="chipCautionCount">0</b></h4><ul id="chipCautions" class="health-list"></ul></section>
+        </div>
+        <h3>籌碼指標</h3><div id="chipMetrics" class="financial-metrics"></div>
+        <h3>集保大戶集中度（每週）</h3>
+        <div class="table-scroll"><table class="financial-table chip-weekly-table"><thead><tr><th>日期</th><th>400張以上</th><th>週增減</th><th>千張以上</th><th>10張以下散戶</th></tr></thead><tbody id="chipWeeklyRows"></tbody></table></div>
+        <p id="chipNote" class="financial-note"></p>
+        <h3>近 20 日法人買賣超（張）</h3><div id="chip"></div>
+      </section>
       <section id="tab-condition" class="tab"><h3>符合條件明細</h3><ul id="detailConditions" class="condition-list"></ul></section>
     </div>
   </div>

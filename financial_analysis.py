@@ -131,7 +131,9 @@ def build_financial_analysis(financial, close=None, max_quarters=12):
         return {
             "latest_date": "",
             "coverage": {"income": False, "balance": False, "cashflow": False},
-            "metrics": [], "quarters": [], "highlights": [], "risks": [],
+            "metrics": [], "quarters": [], "highlights": [], "cautions": [],
+            "risks": [], "risk_level": "unknown", "risk_label": "資料不足",
+            "risk_score": None,
         }
 
     revenue_col = _pick_column(frame, "OperatingRevenueQuarter", "NetRevenueQuarter")
@@ -213,7 +215,7 @@ def build_financial_analysis(financial, close=None, max_quarters=12):
     pe = _ratio(close, ttm_eps, scale=1.0) if _number(ttm_eps) and ttm_eps > 0 else None
     pb = _ratio(close, latest_bvps, scale=1.0) if _number(latest_bvps) and latest_bvps > 0 else None
 
-    highlights, risks = [], []
+    highlights, cautions, risks = [], [], []
 
     if revenue_growth is not None:
         if revenue_growth >= 10:
@@ -315,6 +317,69 @@ def build_financial_analysis(financial, close=None, max_quarters=12):
             latest_equity,
         ))
 
+    # Early-warning layer.  These thresholds are intentionally milder than
+    # the major-risk rules above and are only added when the same metric has
+    # not already crossed the major threshold.
+    if revenue_growth is not None and -10 < revenue_growth < 0:
+        cautions.append(_signal(
+            "revenue_soft", "近四季營收轉弱",
+            f"近四季營收較前四季減少 {_fmt_pct(abs(revenue_growth))}。",
+            revenue_growth,
+        ))
+    if eps_growth is not None and -20 < eps_growth <= -10:
+        cautions.append(_signal(
+            "eps_soft", "近四季 EPS 轉弱",
+            f"近四季 EPS 較前四季減少 {_fmt_pct(abs(eps_growth))}。",
+            eps_growth,
+        ))
+    if net_income_growth is not None and -20 < net_income_growth <= -10:
+        cautions.append(_signal(
+            "profit_soft", "近四季淨利轉弱",
+            f"近四季淨利較前四季減少 {_fmt_pct(abs(net_income_growth))}。",
+            net_income_growth,
+        ))
+    if gross_margin_yoy_change is not None and -3 < gross_margin_yoy_change <= -1.5:
+        cautions.append(_signal(
+            "gross_margin_soft", "毛利率略降",
+            f"最新毛利率較去年同期減少 {abs(gross_margin_yoy_change):.1f} 個百分點。",
+            gross_margin_yoy_change,
+        ))
+    if operating_margin_yoy_change is not None and -3 < operating_margin_yoy_change <= -1.5:
+        cautions.append(_signal(
+            "operating_margin_soft", "營業利益率略降",
+            f"最新營業利益率較去年同期減少 {abs(operating_margin_yoy_change):.1f} 個百分點。",
+            operating_margin_yoy_change,
+        ))
+    if len(recent_eps) >= 1 and recent_eps[-1] < 0 and not (
+        len(recent_eps) >= 2 and recent_eps[-2] < 0
+    ):
+        cautions.append(_signal(
+            "single_quarter_loss", "最新一季轉為虧損",
+            f"最新單季 EPS 為 {recent_eps[-1]:.2f} 元。", recent_eps[-1],
+        ))
+    if roe is not None and 0 <= roe < 5:
+        cautions.append(_signal(
+            "roe_low", "ROE 偏低", f"近四季 ROE 約 {_fmt_pct(roe)}。", roe,
+        ))
+    if latest_debt_ratio is not None and 60 <= latest_debt_ratio <= 70:
+        cautions.append(_signal(
+            "debt_watch", "負債比需留意",
+            f"最新負債比為 {_fmt_pct(latest_debt_ratio)}。", latest_debt_ratio,
+        ))
+    if latest_current_ratio is not None and 1.0 <= latest_current_ratio < 1.2:
+        cautions.append(_signal(
+            "current_ratio_watch", "流動比率偏低",
+            f"最新流動比率為 {latest_current_ratio:.2f} 倍。", latest_current_ratio,
+        ))
+    if (
+        cash_quality is not None and ttm_net_income is not None
+        and ttm_net_income > 0 and 0.5 <= cash_quality < 0.8
+    ):
+        cautions.append(_signal(
+            "cash_quality_watch", "獲利現金含量需留意",
+            f"近四季營業現金流為淨利的 {cash_quality:.2f} 倍。", cash_quality,
+        ))
+
     if latest_debt_ratio is not None:
         if latest_debt_ratio < 40:
             highlights.append(_signal(
@@ -406,13 +471,31 @@ def build_financial_analysis(financial, close=None, max_quarters=12):
         "cashflow_quarters": int(frame.get("OperatingCashFlowQuarter", pd.Series(dtype=float)).notna().sum()),
     }
 
+    risk_score = min(100, len(risks) * 30 + len(cautions) * 10)
+    risk_codes = {item.get("code") for item in risks}
+    # One threshold breach deserves attention, but labelling most cyclical
+    # stocks as "major" would make the three-tier overview much less useful.
+    # Major therefore requires two independent risk signals, except negative
+    # equity, which is serious enough to stand on its own.
+    if len(risks) >= 2 or "negative_equity" in risk_codes:
+        risk_level = "major"
+    elif risks or cautions:
+        risk_level = "attention"
+    else:
+        risk_level = "normal"
+    risk_label = {"major": "重大", "attention": "注意", "normal": "正常"}[risk_level]
+
     return {
         "latest_date": frame.index[-1].strftime("%Y-%m-%d"),
         "coverage": coverage,
         "metrics": metrics,
         "quarters": quarters,
         "highlights": highlights,
+        "cautions": cautions,
         "risks": risks,
+        "risk_level": risk_level,
+        "risk_label": risk_label,
+        "risk_score": risk_score,
         "calculation_note": "依官方季報數值計算；累計損益與現金流已換算為單季。缺少資料時不產生判斷。",
         "extra": {
             "ttm_revenue": _rounded(ttm_revenue),

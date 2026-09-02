@@ -19,6 +19,8 @@ const SORT_SPECS=[
  ['capital_desc','股本大 → 小'],['capital_asc','股本小 → 大'],
  ['volume_desc','成交量大 → 小'],['volume_asc','成交量小 → 大'],
  ['price_desc','股價高 → 低'],['price_asc','股價低 → 高'],
+ ['financial_risk_asc','財務風險少 → 多'],['financial_risk_desc','財務風險多 → 少'],
+ ['chip_score_desc','籌碼偏多 → 偏空'],['large_holder_desc','大戶週增幅高 → 低'],
  ['code_asc','代碼小 → 大'],['code_desc','代碼大 → 小']
 ];
 
@@ -31,6 +33,7 @@ const CONDITION_SPECS=[
  {id:'eps_sum_min_n',category:'基本面',label:'近N季 EPS 合計 ≥ 門檻',params:[['n','季數 N','int',4],['min_sum','EPS合計至少','float',0]]},
  {id:'eps_consec_qoq',category:'基本面',label:'連續N季 EPS 季增為正',params:[['n','連續季數 N','int',2]]},
  {id:'eps_consec_yoy',category:'基本面',label:'連續N季 EPS 年增為正',params:[['n','連續季數 N','int',2]]},
+ {id:'financial_risk_level',category:'基本面',label:'財務風險等級不高於',params:[['max_level','最高風險等級','choice','注意',['正常','注意','重大']]]},
  {id:'ma_alignment',category:'技術面',label:'均線排列',params:[['direction','排列方向','choice','多頭排列',['多頭排列','空頭排列']],['line_count','均線條數','choice','3條',['3條','2條']],['ma_first','第一條天數','int',5],['ma_second','第二條天數','int',10],['ma_third','第三條天數','int',20]]},
  {id:'price_range',category:'技術面',label:'股價介於 X ~ Y 元',params:[['min_price','最低價 X','float',0],['max_price','最高價 Y','float',9999]]},
  {id:'single_day_change_pct',category:'技術面',label:'最新一日漲跌幅介於 X% ~ Y%',params:[['min_pct','最小漲跌幅','float',-3],['max_pct','最大漲跌幅','float',3]]},
@@ -45,7 +48,9 @@ const CONDITION_SPECS=[
  {id:'morning_star',category:'技術面',label:'晨星反轉型態',params:[['pattern_type','晨星類型','choice','寬鬆晨星',['標準晨星','十字晨星','寬鬆晨星']],['downtrend_days','前置跌勢天數','int',5],['long_body_min_pct','長實體最小(%)','float',1]]},
  {id:'inst_buy_days_window',category:'籌碼面',label:'法人近N日買超天數 ≥ 門檻',params:[['investor','法人別','choice','投信',['外資','投信','自營商合計','自營商自行買賣','自營商避險']],['window','查詢區間(日)','int',10],['min_days','買超天數至少','int',3]]},
  {id:'inst_consec_buy',category:'籌碼面',label:'法人最近連續買超天數 ≥ 門檻',params:[['investor','法人別','choice','投信',['外資','投信','自營商合計','自營商自行買賣','自營商避險']],['min_days','連續天數至少','int',3]]},
- {id:'inst_net_shares_min',category:'籌碼面',label:'法人近N日累計買超張數 ≥ 門檻',params:[['investor','法人別','choice','投信',['外資','投信','自營商合計','自營商自行買賣','自營商避險']],['window','查詢區間(日)','int',10],['min_lots','累計買超張數至少','float',1000]]}
+ {id:'inst_net_shares_min',category:'籌碼面',label:'法人近N日累計買超張數 ≥ 門檻',params:[['investor','法人別','choice','投信',['外資','投信','自營商合計','自營商自行買賣','自營商避險']],['window','查詢區間(日)','int',10],['min_lots','累計買超張數至少','float',1000]]},
+ {id:'chip_score_min',category:'籌碼面',label:'籌碼綜合分數 ≥ 門檻',params:[['min_score','最低分數(-100~100)','float',25]]},
+ {id:'large_holder_change_min',category:'籌碼面',label:'400張以上大戶週增減 ≥ 門檻',params:[['min_pct','至少增加(百分點)','float',0.5]]}
 ];
 
 const dbOpen=()=>new Promise((ok,no)=>{const r=indexedDB.open('tw-stock-pwa',1);r.onupgradeneeded=()=>r.result.createObjectStore('data');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
@@ -256,6 +261,15 @@ function evaluateCondition(s,c){
   if(c.id==='eps_consec_qoq'){let ok=true;for(let i=values.length-n;i<values.length;i++)ok=ok&&values[i]>values[i-1];return pass(ok,`檢查最近 ${n} 季`)}
   let ok=true;for(let i=values.length-n;i<values.length;i++)ok=ok&&values[i]>values[i-4];return pass(ok,`同季比較最近 ${n} 季`);
  }
+ if(c.id==='financial_risk_level'){
+  const h=s.financial_health||{},rank={normal:0,attention:1,major:2},allowed={'正常':0,'注意':1,'重大':2,'重大風險':2}[p.max_level];if(!(h.risk_level in rank))return fail('完整財務健診資料不足');return pass(rank[h.risk_level]<=allowed,`目前：${h.risk_label||h.risk_level}`);
+ }
+ if(c.id==='chip_score_min'){
+  const h=s.chip_analysis||{};if(!valid(h.score))return fail('籌碼提示資料不足');return pass(num(h.score)>=num(p.min_score),`籌碼分數 ${num(h.score).toFixed(0)}`);
+ }
+ if(c.id==='large_holder_change_min'){
+  const weeks=(s.chip_analysis&&s.chip_analysis.weeks)||[],v=weeks.length?weeks[weeks.length-1].large_400_change_pct:null;if(!valid(v))return fail('至少需要兩週 TDCC 集保資料');return pass(num(v)>=num(p.min_pct),`大戶週增減 ${num(v).toFixed(2)} 個百分點`);
+ }
  if(c.id.startsWith('inst_')){
   const key={'外資':'foreign_net_lots','投信':'trust_net_lots','自營商合計':'dealer_net_lots','自營商自行買賣':'dealer_self_net_lots','自營商避險':'dealer_hedge_net_lots'}[p.investor]||'trust_net_lots';if(!chip.length)return fail('法人資料不足');
   if(c.id==='inst_buy_days_window'){const a=chip.slice(-Math.max(1,num(p.window))),days=a.filter(x=>num(x[key])>0).length;return pass(days>=num(p.min_days),`買超 ${days} 天`)}
@@ -287,7 +301,8 @@ function evaluateMorningStar(d,p){const days=Math.max(1,num(p.downtrend_days)),n
 function compareStocks(key,a,b){
  const text=(x,y)=>String(x).localeCompare(String(y),'zh-Hant',{numeric:true});
  const number=(x,y)=>num(x,-Infinity)-num(y,-Infinity);
- const cmp={change_desc:()=>number(b.change_pct,a.change_pct),change_asc:()=>number(a.change_pct,b.change_pct),industry_asc:()=>text(a.industry,b.industry),industry_desc:()=>text(b.industry,a.industry),capital_desc:()=>number(b.capital_billion,a.capital_billion),capital_asc:()=>number(a.capital_billion,b.capital_billion),volume_desc:()=>number(b.volume_lots,a.volume_lots),volume_asc:()=>number(a.volume_lots,b.volume_lots),price_desc:()=>number(b.close,a.close),price_asc:()=>number(a.close,b.close),code_asc:()=>text(a.stock_id,b.stock_id),code_desc:()=>text(b.stock_id,a.stock_id)};
+ const risk=x=>({normal:0,attention:1,major:2,unknown:9}[(x.financial_health||{}).risk_level]??9),chip=x=>num((x.chip_analysis||{}).score,-999),large=x=>{const w=(x.chip_analysis&&x.chip_analysis.weeks)||[];return w.length?num(w[w.length-1].large_400_change_pct,-999):-999};
+ const cmp={change_desc:()=>number(b.change_pct,a.change_pct),change_asc:()=>number(a.change_pct,b.change_pct),industry_asc:()=>text(a.industry,b.industry),industry_desc:()=>text(b.industry,a.industry),capital_desc:()=>number(b.capital_billion,a.capital_billion),capital_asc:()=>number(a.capital_billion,b.capital_billion),volume_desc:()=>number(b.volume_lots,a.volume_lots),volume_asc:()=>number(a.volume_lots,b.volume_lots),price_desc:()=>number(b.close,a.close),price_asc:()=>number(a.close,b.close),financial_risk_asc:()=>risk(a)-risk(b),financial_risk_desc:()=>risk(b)-risk(a),chip_score_desc:()=>chip(b)-chip(a),large_holder_desc:()=>large(b)-large(a),code_asc:()=>text(a.stock_id,b.stock_id),code_desc:()=>text(b.stock_id,a.stock_id)};
  return cmp[key]?cmp[key]():0;
 }
 function quarterLabel(date){
@@ -297,17 +312,29 @@ function quarterLabel(date){
 function moneyInBillion(value){return valid(value)?fmt(num(value)/100000000,2):'—'}
 function renderFinancialHealth(health){
  health=health&&typeof health==='object'?health:{};
- const coverage=health.coverage||{},highlights=Array.isArray(health.highlights)?health.highlights:[],risks=Array.isArray(health.risks)?health.risks:[],metrics=Array.isArray(health.metrics)?health.metrics:[],quarters=Array.isArray(health.quarters)?health.quarters:[];
+ const coverage=health.coverage||{},highlights=Array.isArray(health.highlights)?health.highlights:[],cautions=Array.isArray(health.cautions)?health.cautions:[],risks=Array.isArray(health.risks)?health.risks:[],metrics=Array.isArray(health.metrics)?health.metrics:[],quarters=Array.isArray(health.quarters)?health.quarters:[];
  $('financialLatest').textContent=health.latest_date?`最新季報 ${quarterLabel(health.latest_date)}`:'尚無完整季報';
+ $('financialRiskBadge').textContent=health.risk_label||'資料不足';$('financialRiskBadge').className=`health-badge ${health.risk_level||'unknown'}`;
  const coverageItems=[['income','損益表','income_quarters'],['balance','資產負債表','balance_quarters'],['cashflow','現金流量表','cashflow_quarters']];
  $('financialCoverage').innerHTML=coverageItems.map(([key,label,count])=>`<span class="${coverage[key]?'ok':'missing'}">${coverage[key]?'✓':'—'} ${label}${coverage[key]&&valid(coverage[count])?` ${num(coverage[count])}季`:''}</span>`).join('');
  const signalHtml=(items,empty)=>items.length?items.map(item=>`<li><b>${esc(item.title||'')}</b><span>${esc(item.detail||'')}</span></li>`).join(''):`<li class="empty-signal">${esc(empty)}</li>`;
- $('highlightCount').textContent=String(highlights.length);$('riskCount').textContent=String(risks.length);
+ $('highlightCount').textContent=String(highlights.length);$('cautionCount').textContent=String(cautions.length);$('riskCount').textContent=String(risks.length);
  $('financialHighlights').innerHTML=signalHtml(highlights,'目前沒有符合通用亮點門檻，或資料仍不足。');
+ $('financialCautions').innerHTML=signalHtml(cautions,'目前沒有觸發注意門檻。');
  $('financialRisks').innerHTML=signalHtml(risks,'目前沒有觸發通用風險門檻；不代表完全沒有風險。');
  $('financialMetrics').innerHTML=metrics.length?metrics.map(item=>`<div><span>${esc(item.label||'')}</span><b>${fmt(item.value,item.unit==='元'?2:1)}${item.unit?` <small>${esc(item.unit)}</small>`:''}</b></div>`).join(''):'<div class="financial-empty">更新新版雲端資料後，這裡會顯示財務指標。</div>';
  $('financialRows').innerHTML=quarters.slice().reverse().map(row=>`<tr><td>${esc(quarterLabel(row.date))}</td><td>${fmt(row.eps,2)}</td><td>${moneyInBillion(row.revenue)}</td><td>${valid(row.gross_margin_pct)?fmt(row.gross_margin_pct,1)+'%':'—'}</td><td>${valid(row.operating_margin_pct)?fmt(row.operating_margin_pct,1)+'%':'—'}</td><td>${valid(row.debt_ratio_pct)?fmt(row.debt_ratio_pct,1)+'%':'—'}</td><td>${moneyInBillion(row.operating_cash_flow)}</td></tr>`).join('')||'<tr><td colspan="7">尚無季度財務明細，請等待下一次雲端更新。</td></tr>';
  $('financialNote').textContent=health.calculation_note||'亮點與風險採通用規則計算，資料不足時不下判斷；提示僅供研究，不是投資建議。';
+}
+function renderChipAnalysis(health){
+ health=health&&typeof health==='object'?health:{};const coverage=health.coverage||{},positive=Array.isArray(health.positive_signals)?health.positive_signals:[],cautions=Array.isArray(health.cautions)?health.cautions:[],metrics=Array.isArray(health.metrics)?health.metrics:[],weeks=Array.isArray(health.weeks)?health.weeks:[];
+ $('chipStatusBadge').textContent=`${health.status_label||'資料不足'}${valid(health.score)?` ${num(health.score).toFixed(0)}分`:''}`;$('chipStatusBadge').className=`health-badge chip-${health.status||'unknown'}`;
+ $('chipCoverage').innerHTML=`<span class="${coverage.institutional?'ok':'missing'}">${coverage.institutional?'✓':'—'} 每日法人</span><span class="${coverage.tdcc?'ok':'missing'}">${coverage.tdcc?'✓':'—'} TDCC集保${coverage.tdcc?` ${num(coverage.tdcc_weeks)}週`:''}</span>`;
+ const list=(items,empty)=>items.length?items.map(x=>`<li><b>${esc(x.title||'')}</b><span>${esc(x.detail||'')}</span></li>`).join(''):`<li class="empty-signal">${esc(empty)}</li>`;
+ $('chipPositiveCount').textContent=String(positive.length);$('chipCautionCount').textContent=String(cautions.length);$('chipPositive').innerHTML=list(positive,'目前沒有明顯偏多籌碼訊號。');$('chipCautions').innerHTML=list(cautions,'目前沒有明顯籌碼警訊。');
+ $('chipMetrics').innerHTML=metrics.length?metrics.map(x=>`<div><span>${esc(x.label||'')}</span><b>${fmt(x.value,x.unit==='張'?0:2)}${x.unit?` <small>${esc(x.unit)}</small>`:''}</b></div>`).join(''):'<div class="financial-empty">尚無籌碼指標。</div>';
+ $('chipWeeklyRows').innerHTML=weeks.slice().reverse().map(x=>{const hasChange=valid(x.large_400_change_pct),change=hasChange?num(x.large_400_change_pct):null;return `<tr><td>${esc(x.date||'')}</td><td>${fmt(x.large_400_pct,2)}%</td><td class="${hasChange?(change>=0?'up':'down'):''}">${hasChange?`${change>=0?'+':''}${fmt(change,2)}`:'—'}</td><td>${fmt(x.large_1000_pct,2)}%</td><td>${fmt(x.retail_10_pct,2)}%</td></tr>`}).join('')||'<tr><td colspan="5">尚無 TDCC 每週資料</td></tr>';
+ $('chipNote').textContent=health.calculation_note||'集保大戶集中度需要至少兩週資料才會顯示週增減。';
 }
 function renderEps(items){
  const ordered=sorted(items),quarterly=ordered.filter(x=>x.kind!=='cumulative');
@@ -321,13 +348,13 @@ function render(){
  let rows=(screenedStocks===null?snapshot.stocks:screenedStocks).filter(s=>(!q||`${s.stock_id} ${s.name}`.toLowerCase().includes(q))&&(!selectedIndustries.size||selectedIndustries.has(s.industry)));
  rows.sort((a,b)=>{for(const key of sorts){const result=compareStocks(key,a,b);if(result)return result}return compareStocks('code_asc',a,b)});
  $('visibleCount').textContent=`符合 ${rows.length} 檔`;
- $('stockList').innerHTML=rows.map(s=>`<button class="stock-card" data-id="${esc(s.stock_id)}"><div class="identity"><span class="code">${esc(s.stock_id)}</span><b>${esc(s.name)}</b><small>${esc(s.industry)}</small></div><div class="quote"><b>${s.close.toFixed(2)}</b><span class="change ${s.change_pct>=0?'up':'down'}">${pct(s.change_pct)}</span></div><div class="card-metrics"><span>股本<b>${fmt(s.capital_billion,2)} 億</b></span><span>成交量<b>${fmt(s.volume_lots,1)} 張</b></span><span>符合<b>${esc(s.match||'—')}</b></span></div></button>`).join('')||'<div class="empty-state">目前沒有符合股票</div>';
+ $('stockList').innerHTML=rows.map(s=>{const f=s.financial_health||{},c=s.chip_analysis||{};return `<button class="stock-card" data-id="${esc(s.stock_id)}"><div class="identity"><span class="code">${esc(s.stock_id)}</span><b>${esc(s.name)}</b><small>${esc(s.industry)}</small></div><div class="quote"><b>${s.close.toFixed(2)}</b><span class="change ${s.change_pct>=0?'up':'down'}">${pct(s.change_pct)}</span></div><div class="card-signals"><span class="health-badge ${f.risk_level||'unknown'}">財務 ${esc(f.risk_label||'資料不足')}</span><span class="health-badge chip-${c.status||'unknown'}">${esc(c.status_label||'籌碼資料不足')}${valid(c.score)?` ${num(c.score).toFixed(0)}`:''}</span></div><div class="card-metrics"><span>股本<b>${fmt(s.capital_billion,2)} 億</b></span><span>成交量<b>${fmt(s.volume_lots,1)} 張</b></span><span>符合<b>${esc(s.match||'—')}</b></span></div></button>`}).join('')||'<div class="empty-state">目前沒有符合股票</div>';
  $('stockList').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>openDetail(rows.find(s=>s.stock_id===b.dataset.id)));
 }
 function openDetail(s){
  if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
- $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderFinancialHealth(s.financial_health);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
+ $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
 function hideDetail(){if($('detail').hidden)return;const restoreY=listScrollY;$('detail').hidden=true;document.body.classList.remove('detail-open');document.body.style.position='';document.body.style.top='';document.body.style.width='';selected=null;detailHistoryActive=false;touchStart=null;requestAnimationFrame(()=>window.scrollTo(0,restoreY))}
 function requestCloseDetail(){if(detailHistoryActive&&history.state&&history.state.stockDetail)history.back();else hideDetail()}

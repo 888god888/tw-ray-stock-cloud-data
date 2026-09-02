@@ -108,7 +108,7 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
         ),
     )
     snapshot.update({
-        "schema_version": 2,
+        "schema_version": 3,
         "strategy_name": "雲端完整市場資料（由手機設定條件）",
         "sync_mode": "initial" if needs_initial else "incremental",
     })
@@ -118,6 +118,12 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
             f"{snapshot['financial_analysis_error_count']} stocks",
             flush=True,
         )
+    if snapshot.get("chip_analysis_error_count"):
+        print(
+            "WARNING: chip analysis skipped for "
+            f"{snapshot['chip_analysis_error_count']} stocks",
+            flush=True,
+        )
     json_path = write_mobile_snapshot(output_dir / "snapshot.json", snapshot)
     gzip_path = output_dir / "snapshot.json.gz"
     _gzip_file(json_path, gzip_path)
@@ -125,7 +131,7 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
     db_gzip_path = output_dir / "tw_stock_cloud.sqlite3.gz"
     _gzip_file(db_path, db_gzip_path)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": snapshot["generated_at"],
         "latest_trade_date": snapshot["latest_trade_date"],
         "stock_count": snapshot["stock_count"],
