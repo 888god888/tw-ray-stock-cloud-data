@@ -32,6 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           TODAY="$(TZ=Asia/Taipei date +%F)"
+          CUTOFF_EPOCH="$(TZ=Asia/Taipei date -d "$TODAY 18:00:00" +%s)"
           CHECK_DIR="$RUNNER_TEMP/stock-schedule-check"
           mkdir -p "$CHECK_DIR"
           echo "台灣日期：$TODAY"
@@ -60,7 +61,9 @@ jobs:
             echo "$RUNS_JSON" |
             jq -r 'if length > 0 then .[0].conclusion // "" else "" end'
           )"
+          GENERATED_AT=""
           GENERATED_DATE=""
+          GENERATED_EPOCH=0
           if gh release download latest \
             --repo "$GITHUB_REPOSITORY" \
             --pattern manifest.json \
@@ -69,14 +72,16 @@ jobs:
             GENERATED_AT="$(jq -r '.generated_at // empty' "$CHECK_DIR/manifest.json")"
             if [ -n "$GENERATED_AT" ]; then
               GENERATED_DATE="$(TZ=Asia/Taipei date -d "$GENERATED_AT" +%F 2>/dev/null || true)"
+              GENERATED_EPOCH="$(date -d "$GENERATED_AT" +%s 2>/dev/null || echo 0)"
             fi
           fi
-          echo "最新資料產生日期：${GENERATED_DATE:-尚無資料}"
+          echo "最新資料產生時間：${GENERATED_AT:-尚無資料}"
+          echo "最新資料台灣日期：${GENERATED_DATE:-尚無資料}"
           echo "最近更新結果：${LAST_CONCLUSION:-尚無紀錄}"
-          if [ "$GENERATED_DATE" = "$TODAY" ] &&
+          if [ "$GENERATED_EPOCH" -ge "$CUTOFF_EPOCH" ] &&
              [ "$LAST_CONCLUSION" = "success" ]
           then
-            echo "今天已成功更新，不需要再次執行。"
+            echo "今天 18:00 後已成功更新，不需要再次執行。"
             exit 0
           fi
           echo "今天尚未成功更新，啟動更新台股盤後資料。"
