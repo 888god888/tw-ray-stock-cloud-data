@@ -1,6 +1,7 @@
 const $=id=>document.getElementById(id);
 let snapshot=null,selected=null,screenedStocks=null,activeConditions=[],builderReady=false,mainControlsReady=false,conditionsHydrated=false;
 let selectedIndustries=new Set(),availableIndustries=[],detailHistoryActive=false,touchStart=null,listScrollY=0;
+let candleVisibleDays=180,pinchZoom=null,chartResizeTimer=null;
 const ACTIVE_CONDITIONS_KEY='tw-stock-mobile-conditions';
 const ACTIVE_CONDITIONS_DB_KEY='active-conditions-v1';
 const SAVED_STRATEGIES_KEY='tw-stock-mobile-saved-strategies-v1';
@@ -354,13 +355,67 @@ function render(){
 function openDetail(s){
  if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
- $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
+ $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);resetCandleZoom(false);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
-function hideDetail(){if($('detail').hidden)return;const restoreY=listScrollY;$('detail').hidden=true;document.body.classList.remove('detail-open');document.body.style.position='';document.body.style.top='';document.body.style.width='';selected=null;detailHistoryActive=false;touchStart=null;requestAnimationFrame(()=>window.scrollTo(0,restoreY))}
+function hideDetail(){if($('detail').hidden)return;const restoreY=listScrollY;$('detail').hidden=true;document.body.classList.remove('detail-open');document.body.style.position='';document.body.style.top='';document.body.style.width='';selected=null;detailHistoryActive=false;touchStart=null;pinchZoom=null;requestAnimationFrame(()=>window.scrollTo(0,restoreY))}
 function requestCloseDetail(){if(detailHistoryActive&&history.state&&history.state.stockDetail)history.back();else hideDetail()}
 function tab(name){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id===`tab-${name}`));if(name==='price')setTimeout(drawCandle,20);if(name==='fund')setTimeout(drawRevenue,20)}
 function canvas(id,h=340){const c=$(id),d=devicePixelRatio||1,w=c.clientWidth||700;c.width=w*d;c.height=h*d;const x=c.getContext('2d');x.scale(d,d);return{x,w,h}}
-function drawCandle(){if(!selected)return;const d=(selected.price_history||[]).slice(-num($('days').value,180));if(d.length<2)return;const {x,w,h}=canvas('candle'),p={l:48,r:12,t:18,b:28},lo=Math.min(...d.map(b=>b.low)),hi=Math.max(...d.map(b=>b.high)),span=Math.max(hi-lo,.01),iw=w-p.l-p.r,ih=h-p.t-p.b,step=iw/d.length,Y=v=>p.t+(hi-v)/span*ih;x.clearRect(0,0,w,h);x.font='10px sans-serif';for(let i=0;i<5;i++){const v=hi-span*i/4;x.strokeStyle='#31505b';x.setLineDash([4,5]);x.beginPath();x.moveTo(p.l,Y(v));x.lineTo(w-p.r,Y(v));x.stroke();x.fillStyle='#829aa7';x.fillText(v.toFixed(1),5,Y(v)+3)}x.setLineDash([]);d.forEach((b,i)=>{const X=p.l+step*i+step/2,up=b.close>=b.open;x.strokeStyle=x.fillStyle=up?'#ff6374':'#55b6ff';x.beginPath();x.moveTo(X,Y(b.high));x.lineTo(X,Y(b.low));x.stroke();const top=Y(Math.max(b.open,b.close)),bottom=Y(Math.min(b.open,b.close)),bw=Math.max(1,Math.min(6,step*.65));x.fillRect(X-bw/2,top,bw,Math.max(bottom-top,1))})}
+function emaSeries(data,period){if(!data.length)return[];const k=2/(period+1),out=[num(data[0].close)];for(let i=1;i<data.length;i++)out.push(num(data[i].close)*k+out[i-1]*(1-k));return out}
+function analysePriceAction(raw){
+ const history=sorted(raw).filter(b=>valid(b.open)&&valid(b.high)&&valid(b.low)&&valid(b.close));
+ if(history.length<5)return{history,supports:[],resistances:[],gaps:[],atr:0,view:'歷史日線不足，暫時無法形成可靠的價格行為觀點。'};
+ const last=history[history.length-1],close=num(last.close),ranges=[];
+ for(let i=1;i<history.length;i++){const b=history[i],prev=history[i-1];ranges.push(Math.max(num(b.high)-num(b.low),Math.abs(num(b.high)-num(prev.close)),Math.abs(num(b.low)-num(prev.close))))}
+ const atr=average(ranges.slice(-14)),tolerance=Math.max(close*.006,atr*.35,.01),radius=2,pivots={support:[],resistance:[]};
+ for(let i=radius;i<history.length-radius;i++){
+  const b=history[i],left=history.slice(i-radius,i),right=history.slice(i+1,i+radius+1);
+  if(left.every(v=>num(b.high)>=num(v.high))&&right.every(v=>num(b.high)>num(v.high)))pivots.resistance.push({price:num(b.high),index:i,date:b.date});
+  if(left.every(v=>num(b.low)<=num(v.low))&&right.every(v=>num(b.low)<num(v.low)))pivots.support.push({price:num(b.low),index:i,date:b.date});
+ }
+ const cluster=points=>{
+  const groups=[];
+  points.slice().sort((a,b)=>a.price-b.price).forEach(point=>{let group=groups.find(g=>Math.abs(g.price-point.price)<=tolerance);if(!group){group={price:point.price,touches:0,latestIndex:-1,latestDate:''};groups.push(group)}group.price=(group.price*group.touches+point.price)/(group.touches+1);group.touches++;if(point.index>group.latestIndex){group.latestIndex=point.index;group.latestDate=point.date}});
+  return groups;
+ };
+ const supports=cluster(pivots.support).filter(v=>v.price<close).sort((a,b)=>Math.abs(close-a.price)-Math.abs(close-b.price)||b.touches-a.touches).slice(0,3);
+ const resistances=cluster(pivots.resistance).filter(v=>v.price>close).sort((a,b)=>Math.abs(close-a.price)-Math.abs(close-b.price)||b.touches-a.touches).slice(0,3);
+ const gaps=[];
+ for(let i=1;i<history.length;i++){
+  const prev=history[i-1],cur=history[i];let gap=null;
+  if(num(cur.low)>num(prev.high))gap={type:'up',lower:num(prev.high),upper:num(cur.low),startIndex:i,date:cur.date};
+  else if(num(cur.high)<num(prev.low))gap={type:'down',lower:num(cur.high),upper:num(prev.low),startIndex:i,date:cur.date};
+  if(!gap)continue;
+  gap.sizePct=(gap.upper-gap.lower)/Math.max(num(prev.close),.01)*100;gap.fillIndex=null;gap.fillDate=null;
+  for(let j=i+1;j<history.length;j++){const filled=gap.type==='up'?num(history[j].low)<=gap.lower:num(history[j].high)>=gap.upper;if(filled){gap.fillIndex=j;gap.fillDate=history[j].date;break}}
+  gap.filled=gap.fillIndex!==null;gaps.push(gap);
+ }
+ const ema20=emaSeries(history,20),ema50=emaSeries(history,50),e20=ema20[ema20.length-1],e50=ema50[ema50.length-1],e20Past=ema20[Math.max(0,ema20.length-6)],bull=close>e20&&e20>e50&&e20>e20Past,bear=close<e20&&e20<e50&&e20<e20Past,nearSupport=supports[0],nearResistance=resistances[0],recentOpenGap=gaps.slice().reverse().find(g=>!g.filled&&history.length-1-g.startIndex<=20);let view;
+ if(bull){if(nearResistance&&(nearResistance.price-close)/close<=.03)view=`多方趨勢仍在，但距離 ${nearResistance.price.toFixed(2)} 壓力不遠，偏向等有效突破或回測 EMA20，避免在壓力下追價。`;else if(recentOpenGap?.type==='up')view='多方趨勢且近期向上缺口尚未完全回補，買方仍占優勢，但若跌回缺口下緣代表動能轉弱。';else view='價格位於上升的 EMA20 與 EMA50 之上，多方仍掌控，操作上偏向等待回測支撐後的多方訊號。'}
+ else if(bear){if(nearSupport&&(close-nearSupport.price)/close<=.03)view=`空方趨勢仍在但已靠近 ${nearSupport.price.toFixed(2)} 支撐，宜觀察是否出現強勢反轉，未確認前不急著摸底。`;else view='價格位於下降的 EMA20 與 EMA50 之下，空方仍掌控，反彈在出現明確突破前較像賣壓測試。'}
+ else{const recent=history.slice(-20),rangeHigh=Math.max(...recent.map(b=>num(b.high))),rangeLow=Math.min(...recent.map(b=>num(b.low))),position=(close-rangeLow)/Math.max(rangeHigh-rangeLow,.01);if(position>=.72)view=nearResistance?`目前較像交易區間上緣，${nearResistance.price.toFixed(2)} 附近有壓力，除非出現強勁突破否則不宜追高。`:'目前較像交易區間上緣，等待強勁突破確認或回落後再評估，勝率通常比直接追價好。';else if(position<=.28)view=nearSupport?`目前較像交易區間下緣，${nearSupport.price.toFixed(2)} 附近是觀察支撐，需等多方反轉 K 棒確認。`:'目前較像交易區間下緣，可等待多方反轉證據，但跌破區間仍要尊重空方動能。';else view='EMA 與價格互相交疊，盤勢較像交易區間中段，方向優勢不明顯，耐心等靠近邊界或有效突破。'}
+ return{history,supports,resistances,gaps,atr,ema20,view};
+}
+function renderPriceAction(a){
+ $('albrooksView').textContent=a.view;
+ const rows=[...a.resistances.map(v=>({...v,type:'resistance'})),...a.supports.map(v=>({...v,type:'support'}))];
+ $('levelSummary').innerHTML=rows.length?rows.map(v=>`<div class="level-row ${v.type}"><i>${v.type==='support'?'支撐':'壓力'}</i><b>${v.price.toFixed(2)}</b><small>${v.touches} 次轉折 · ${esc(String(v.latestDate||'').slice(5))}</small></div>`).join(''):'<span class="price-action-empty">目前分析區間內沒有足夠的轉折位置。</span>';
+ const gaps=a.gaps.slice().sort((x,y)=>Number(x.filled)-Number(y.filled)||y.startIndex-x.startIndex).slice(0,5);
+ $('gapSummary').innerHTML=gaps.length?gaps.map(g=>`<div class="gap-row ${g.type} ${g.filled?'filled':''}"><i>${g.type==='up'?'向上':'向下'}</i><b>${g.lower.toFixed(2)}～${g.upper.toFixed(2)}</b><small>${esc(String(g.date||'').slice(5))} · ${g.filled?`已於 ${esc(String(g.fillDate||'').slice(5))} 回補`:'尚未回補'}</small></div>`).join(''):'<span class="price-action-empty">近 180 日沒有符合嚴格定義的日線缺口。</span>';
+}
+function setCandleWindow(value,redraw=true){const history=selected?(selected.price_history||[]):[],max=Math.max(2,Math.min(num($('days').value,180),history.length||180)),min=Math.min(20,max);candleVisibleDays=Math.max(min,Math.min(max,Math.round(num(value,max))));$('chartZoom').min=String(min);$('chartZoom').max=String(max);$('chartZoom').value=String(candleVisibleDays);$('chartWindowLabel').textContent=`顯示最近 ${candleVisibleDays} 日`;if(redraw)drawCandle()}
+function resetCandleZoom(redraw=true){setCandleWindow(num($('days').value,180),redraw)}
+function drawCandle(){
+ if(!selected)return;const base=sorted(selected.price_history||[]).slice(-num($('days').value,180));if(base.length<2){$('albrooksView').textContent='歷史日線不足，暫時無法分析。';return}setCandleWindow(candleVisibleDays,false);const d=base.slice(-candleVisibleDays),analysis=analysePriceAction(base);renderPriceAction(analysis);const {x,w,h}=canvas('candle'),p={l:48,r:12,t:18,b:30},visibleStart=base.length-d.length,rawLow=Math.min(...d.map(b=>num(b.low))),rawHigh=Math.max(...d.map(b=>num(b.high))),rawSpan=Math.max(rawHigh-rawLow,.01),nearLevels=[...analysis.supports,...analysis.resistances].filter(v=>v.price>=rawLow-rawSpan*.08&&v.price<=rawHigh+rawSpan*.08),lo=Math.min(rawLow,...nearLevels.map(v=>v.price)),hi=Math.max(rawHigh,...nearLevels.map(v=>v.price)),padSpan=Math.max(hi-lo,.01),minY=lo-padSpan*.04,maxY=hi+padSpan*.04,span=maxY-minY,iw=w-p.l-p.r,ih=h-p.t-p.b,step=iw/d.length,Y=v=>p.t+(maxY-v)/span*ih,X=i=>p.l+step*(i-visibleStart+.5);x.clearRect(0,0,w,h);x.font='10px sans-serif';x.textBaseline='alphabetic';
+ for(let i=0;i<5;i++){const v=maxY-span*i/4;x.strokeStyle='#31505b';x.setLineDash([4,5]);x.beginPath();x.moveTo(p.l,Y(v));x.lineTo(w-p.r,Y(v));x.stroke();x.fillStyle='#829aa7';x.textAlign='left';x.fillText(v.toFixed(1),5,Y(v)+3)}x.setLineDash([]);
+ const chartGaps=analysis.gaps.filter(g=>{const end=g.filled?g.fillIndex:base.length-1;return end>=visibleStart&&g.startIndex<base.length&&g.upper>=minY&&g.lower<=maxY}).slice(-6);
+ chartGaps.forEach(g=>{const start=Math.max(g.startIndex,visibleStart),end=Math.min(g.filled?g.fillIndex:base.length-1,base.length-1),left=Math.max(p.l,X(start)-step/2),right=Math.min(w-p.r,X(end)+step/2);x.fillStyle=g.type==='up'?(g.filled?'#25c4a812':'#25c4a82b'):(g.filled?'#55b6ff12':'#55b6ff25');x.fillRect(left,Y(g.upper),Math.max(1,right-left),Math.max(2,Y(g.lower)-Y(g.upper)));x.strokeStyle=g.type==='up'?'#46d7b988':'#70c7ff88';x.setLineDash([3,3]);x.strokeRect(left,Y(g.upper),Math.max(1,right-left),Math.max(2,Y(g.lower)-Y(g.upper)));x.setLineDash([])});
+ const visibleEma=emaSeries(base,20);x.strokeStyle='#ffd166';x.lineWidth=1.7;x.beginPath();for(let i=visibleStart;i<base.length;i++){const px=X(i),py=Y(visibleEma[i]);if(i===visibleStart)x.moveTo(px,py);else x.lineTo(px,py)}x.stroke();x.lineWidth=1;
+ d.forEach((b,i)=>{const index=visibleStart+i,px=X(index),up=num(b.close)>=num(b.open);x.strokeStyle=x.fillStyle=up?'#ff6374':'#55b6ff';x.beginPath();x.moveTo(px,Y(num(b.high)));x.lineTo(px,Y(num(b.low)));x.stroke();const top=Y(Math.max(num(b.open),num(b.close))),bottom=Y(Math.min(num(b.open),num(b.close))),bw=Math.max(1,Math.min(7,step*.65));x.fillRect(px-bw/2,top,bw,Math.max(bottom-top,1))});
+ const lineLabel=(level,type)=>{const color=type==='support'?'#46d7b9':'#ff7890',label=`${type==='support'?'支撐':'壓力'} ${level.price.toFixed(2)}`,py=Y(level.price);x.strokeStyle=color;x.setLineDash([7,4]);x.beginPath();x.moveTo(p.l,py);x.lineTo(w-p.r,py);x.stroke();x.setLineDash([]);x.font='bold 10px sans-serif';const tw=x.measureText(label).width;x.fillStyle='#091822dd';x.fillRect(w-p.r-tw-9,py-11,tw+7,14);x.fillStyle=color;x.textAlign='right';x.fillText(label,w-p.r-4,py)};
+ analysis.resistances.filter(v=>nearLevels.includes(v)).forEach(v=>lineLabel(v,'resistance'));analysis.supports.filter(v=>nearLevels.includes(v)).forEach(v=>lineLabel(v,'support'));
+ const dateIndexes=[visibleStart,Math.floor((visibleStart+base.length-1)/2),base.length-1];x.fillStyle='#829aa7';x.font='9px sans-serif';dateIndexes.forEach((index,i)=>{x.textAlign=i===0?'left':i===2?'right':'center';x.fillText(String(base[index].date||'').slice(5),i===0?p.l:i===2?w-p.r:X(index),h-9)});x.textAlign='left';
+}
 function drawRevenue(){
  if(!selected)return;
  const d=(selected.monthly_revenue||[]).slice(-12),{x,w,h}=canvas('revenue'),pad={l:52,r:12,t:18,b:34};x.clearRect(0,0,w,h);
@@ -378,10 +433,16 @@ function renderChip(points){const d=points.slice(-20).reverse();$('chip').innerH
 ['syncTop','syncEmpty'].forEach(id=>$(id).onclick=startCloudSync);
 $('fileInput').onchange=e=>importFile(e.target.files[0]);
 $('search').addEventListener('input',render);
-$('backDetail').onclick=requestCloseDetail;$('closeDetail').onclick=requestCloseDetail;$('days').onchange=drawCandle;
+$('backDetail').onclick=requestCloseDetail;$('closeDetail').onclick=requestCloseDetail;$('days').onchange=()=>resetCandleZoom();
+$('zoomOut').onclick=()=>setCandleWindow(candleVisibleDays+10);$('zoomIn').onclick=()=>setCandleWindow(candleVisibleDays-10);$('zoomReset').onclick=()=>resetCandleZoom();$('chartZoom').oninput=e=>setCandleWindow(e.target.value);
+$('candle').addEventListener('wheel',e=>{if(!selected)return;e.preventDefault();setCandleWindow(candleVisibleDays+(e.deltaY>0?10:-10))},{passive:false});
+$('candle').addEventListener('touchstart',e=>{if(e.touches.length!==2)return;const [a,b]=e.touches;pinchZoom={distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),days:candleVisibleDays}},{passive:true});
+$('candle').addEventListener('touchmove',e=>{if(!pinchZoom||e.touches.length!==2)return;e.preventDefault();const [a,b]=e.touches,distance=Math.max(20,Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY));setCandleWindow(pinchZoom.days*pinchZoom.distance/distance)},{passive:false});
+$('candle').addEventListener('touchend',e=>{if(e.touches.length<2)pinchZoom=null},{passive:true});
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('detail').onclick=e=>{if(e.target===$('detail'))$('closeDetail').click()};
-$('detailPanel').addEventListener('touchstart',e=>{const t=e.touches[0];touchStart=t&&t.clientX<=70?{x:t.clientX,y:t.clientY}:null},{passive:true});
+$('detailPanel').addEventListener('touchstart',e=>{const t=e.touches.length===1?e.touches[0]:null;touchStart=t&&t.clientX<=70?{x:t.clientX,y:t.clientY}:null},{passive:true});
 $('detailPanel').addEventListener('touchend',e=>{if(!touchStart)return;const t=e.changedTouches[0],dx=t.clientX-touchStart.x,dy=Math.abs(t.clientY-touchStart.y);touchStart=null;if(dx>=85&&dy<=70&&dx>dy*1.4)requestCloseDetail()},{passive:true});
+window.addEventListener('resize',()=>{clearTimeout(chartResizeTimer);chartResizeTimer=setTimeout(()=>{if(selected){drawCandle();drawRevenue()}},120)});
 if('scrollRestoration'in history)history.scrollRestoration='manual';
 window.addEventListener('popstate',e=>{if(!$('detail').hidden){hideDetail();return}if(e.state&&e.state.stockDetail&&snapshot){const s=snapshot.stocks.find(x=>x.stock_id===String(e.state.stockDetail));if(s){detailHistoryActive=true;openDetail(s)}}else restoreScreenState()});
 function setupPwa(){

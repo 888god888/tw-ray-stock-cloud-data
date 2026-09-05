@@ -91,7 +91,30 @@
         <div class="metrics"><div><span>股本</span><b id="detailCapital"></b></div><div><span>成交量</span><b id="detailVolume"></b></div><div><span>符合</span><b id="detailMatch"></b></div></div>
       </section>
       <nav class="tabs"><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
-      <section id="tab-price" class="tab active"><div class="chart-tools"><b>K 線</b><select id="days"><option>60</option><option>120</option><option selected>180</option></select></div><canvas id="candle"></canvas></section>
+      <section id="tab-price" class="tab active">
+        <div class="chart-tools">
+          <div><b>K 線與價格行為</b><small id="chartWindowLabel">顯示最近 180 日</small></div>
+          <label class="history-select">分析區間<select id="days"><option>60</option><option>120</option><option selected>180</option></select></label>
+        </div>
+        <div class="chart-zoom" aria-label="K 線縮放控制">
+          <button id="zoomOut" type="button" aria-label="縮小 K 線，顯示更多交易日">−</button>
+          <input id="chartZoom" type="range" min="20" max="180" value="180" step="1" aria-label="K 線顯示天數">
+          <button id="zoomIn" type="button" aria-label="放大 K 線，顯示較少交易日">＋</button>
+          <button id="zoomReset" class="zoom-reset" type="button">重設</button>
+        </div>
+        <div class="chart-legend"><span class="ema20">EMA20</span><span class="resistance">壓力</span><span class="support">支撐</span><span class="gap">缺口區</span></div>
+        <canvas id="candle" aria-label="可縮放日 K 線、EMA20、支撐壓力與缺口"></canvas>
+        <p class="zoom-hint">可用 ＋／−、滑桿縮放；電腦可使用滑鼠滾輪，手機可在圖上雙指縮放。</p>
+        <section class="albrooks-view">
+          <div><span>Al Brooks 價格行為觀點</span><small>程式判讀</small></div>
+          <b id="albrooksView">資料分析中…</b>
+        </section>
+        <div class="price-action-grid">
+          <section class="price-action-card"><h3>多重支撐／壓力</h3><div id="levelSummary" class="level-summary"></div></section>
+          <section class="price-action-card"><h3>近期缺口</h3><div id="gapSummary" class="gap-summary"></div></section>
+        </div>
+        <p class="price-action-note">支撐壓力由近 180 日轉折點與重複測試位置聚類估算；缺口採「今日最低價高於前日最高價」或「今日最高價低於前日最低價」定義。僅供盤後研究，不代表投資建議。</p>
+      </section>
       <section id="tab-fund" class="tab">
         <div class="financial-title">
           <h3>財務健診</h3>
