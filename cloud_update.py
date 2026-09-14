@@ -107,10 +107,13 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
             if done == 1 or done == total or done % 100 == 0 else None
         ),
     )
+    final_coverage = store.coverage_summary()
     snapshot.update({
         "schema_version": 3,
         "strategy_name": "雲端完整市場資料（由手機設定條件）",
         "sync_mode": "initial" if needs_initial else "incremental",
+        "latest_revenue_month": final_coverage.get("revenue_latest_month", ""),
+        "revenue_coverage": final_coverage.get("revenue_coverage", {}),
     })
     if snapshot.get("financial_analysis_error_count"):
         print(
@@ -141,7 +144,7 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
         "database_file": db_gzip_path.name,
         "database_sha256": _sha256(db_gzip_path),
         "database_size": db_gzip_path.stat().st_size,
-        "coverage": store.coverage_summary(),
+        "coverage": final_coverage,
         "sync_result": sync_result,
     }
     (output_dir / "manifest.json").write_text(

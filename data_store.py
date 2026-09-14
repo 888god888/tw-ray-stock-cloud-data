@@ -595,6 +595,24 @@ class DataStore:
                 """SELECT market, COUNT(*) FROM monthly_revenue
                    GROUP BY market"""
             ).fetchall())
+            revenue_latest_rows = conn.execute(
+                """
+                WITH latest_market AS (
+                    SELECT market, MAX(date) AS latest_date
+                    FROM monthly_revenue
+                    GROUP BY market
+                )
+                SELECT r.market, l.latest_date,
+                       COUNT(DISTINCT r.stock_id) AS stock_count
+                FROM latest_market l
+                JOIN monthly_revenue r
+                  ON r.market = l.market AND r.date = l.latest_date
+                GROUP BY r.market, l.latest_date
+                """
+            ).fetchall()
+            stock_market_counts = dict(conn.execute(
+                """SELECT market, COUNT(*) FROM stock_info GROUP BY market"""
+            ).fetchall())
             fin_rows = conn.execute("SELECT COUNT(*) FROM financial_statement").fetchone()[0]
             institutional_rows, institutional_stocks, institutional_min_date, institutional_max_date = conn.execute(
                 """SELECT COUNT(*), COUNT(DISTINCT stock_id), MIN(date), MAX(date)
@@ -608,6 +626,21 @@ class DataStore:
                 """SELECT COUNT(*), COUNT(DISTINCT stock_id), MIN(date), MAX(date)
                    FROM shareholding_distribution"""
             ).fetchone()
+        revenue_coverage = {}
+        for row in revenue_latest_rows:
+            market = str(row["market"] or "")
+            expected = int(stock_market_counts.get(market, 0))
+            actual = int(row["stock_count"] or 0)
+            revenue_coverage[market] = {
+                "latest_month": str(row["latest_date"] or "")[:7],
+                "stock_count": actual,
+                "expected_stock_count": expected,
+                "coverage_pct": round(actual / expected * 100, 1) if expected else 0.0,
+            }
+        latest_revenue_month = max(
+            (item["latest_month"] for item in revenue_coverage.values()),
+            default="",
+        )
         return {
             "stock_count": stock_count,
             "price_rows": price_rows,
@@ -620,6 +653,8 @@ class DataStore:
             "revenue_max_date": revenue_max_date,
             "revenue_twse_rows": int(revenue_market_rows.get("TWSE", 0)),
             "revenue_tpex_rows": int(revenue_market_rows.get("TPEx", 0)),
+            "revenue_latest_month": latest_revenue_month,
+            "revenue_coverage": revenue_coverage,
             "financial_rows": fin_rows,
             "institutional_rows": institutional_rows,
             "institutional_stocks": institutional_stocks,

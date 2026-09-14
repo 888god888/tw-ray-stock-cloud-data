@@ -1267,11 +1267,31 @@ class OfficialDataService:
             end_month = 12
         # 最新月份先處理，不要讓使用者等完一年前的失敗請求才看到資料。
         periods = list(reversed(_month_sequence(end_year, end_month, max(months, 14))))
+        # 最近兩個月可能仍在陸續申報。即使先前抓到部分資料，也必須在
+        # 每次盤後更新重新下載，不能把「已有幾筆」誤當成全市場已完成。
+        retry_periods = set(periods[:2])
         jobs = [(y, m, market) for y, m in periods for market in ("TWSE", "TPEx")]
         rows_written = errors = snapshot_rows = 0
         market_rows = {"TWSE": 0, "TPEx": 0}
         history_blocked = {}
         total_jobs = len(jobs) + 2
+        stock_info = self.store.get_stock_info()
+        expected_market_rows = (
+            stock_info.groupby("market")["stock_id"].nunique().to_dict()
+            if stock_info is not None and not stock_info.empty else {}
+        )
+
+        def revenue_sync_status(market: str, row_count: int, source: str):
+            expected = int(expected_market_rows.get(market, 0))
+            minimum = max(50, int(expected * 0.85)) if expected else 1
+            complete = int(row_count) >= minimum
+            status = "ok" if complete else "partial"
+            message = (
+                f"{source}已寫入 {int(row_count)} 檔；"
+                f"市場股票約 {expected} 檔；"
+                f"狀態：{'完整' if complete else '仍在申報，後續會重試'}"
+            )
+            return status, message
 
         # OpenAPI 只有最新快照，每個市場只抓一次，先寫入 SQLite。
         for snapshot_idx, market in enumerate(("TWSE", "TPEx"), 1):
@@ -1286,9 +1306,12 @@ class OfficialDataService:
                 market_rows[market] += written
                 latest_year = int(latest.iloc[0]["revenue_year"])
                 latest_month = int(latest.iloc[0]["revenue_month"])
+                status, message = revenue_sync_status(
+                    market, len(latest), "OpenAPI 最新快照"
+                )
                 self.store.set_sync_state(
                     f"revenue:{market}:{latest_year}-{latest_month:02d}",
-                    "ok", len(latest), "OpenAPI 最新快照已寫入",
+                    status, len(latest), message,
                 )
             except Exception as exc:
                 errors += 1
@@ -1308,7 +1331,7 @@ class OfficialDataService:
                 )
                 continue
             key = f"revenue:{market}:{year}-{month:02d}"
-            if self.store.sync_succeeded(key):
+            if self.store.sync_succeeded(key) and (year, month) not in retry_periods:
                 self._emit(callback, f"略過已下載 {market} {year}-{month:02d} 營收", idx, len(jobs))
                 continue
             try:
@@ -1325,7 +1348,10 @@ class OfficialDataService:
                     info["industry_category"] = ""
                     info["paid_in_capital"] = None
                     self.store.upsert_stock_info(info)
-                self.store.set_sync_state(key, "ok", len(df))
+                status, message = revenue_sync_status(
+                    market, len(df), "MOPS 月營收"
+                )
+                self.store.set_sync_state(key, status, len(df), message)
             except Exception as exc:
                 errors += 1
                 message = str(exc)

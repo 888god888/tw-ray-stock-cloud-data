@@ -37,6 +37,7 @@
     <div id="dashboard" hidden>
       <section class="stats">
         <div><span>交易日</span><b id="tradeDate">—</b></div>
+        <div><span>最新營收</span><b id="revenueMonth">—</b></div>
         <div><span>手機資料庫</span><b id="stockCount">0 檔</b></div>
         <div><span>雲端狀態</span><b id="cloudStatus">待檢查</b></div>
       </section>
@@ -90,7 +91,31 @@
         <div class="detail-price"><b id="detailClose"></b><span id="detailChange"></span></div>
         <div class="metrics"><div><span>股本</span><b id="detailCapital"></b></div><div><span>成交量</span><b id="detailVolume"></b></div><div><span>符合</span><b id="detailMatch"></b></div></div>
       </section>
-      <nav class="tabs"><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
+      <nav class="tabs"><button data-tab="research">分析</button><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
+      <section id="tab-research" class="tab">
+        <div class="research-hero">
+          <div><small>本機綜合判讀 · 不使用 Token</small><h3 id="researchStance">分析中…</h3></div>
+          <span id="researchScore" class="research-score">—</span>
+        </div>
+        <p id="researchSummary" class="research-summary"></p>
+        <section class="research-card">
+          <h3>這間公司靠什麼賺錢？</h3>
+          <p id="businessModel"></p>
+          <small id="businessEvidence"></small>
+        </section>
+        <div class="financial-health-grid research-grid">
+          <section class="health-card highlight-card"><h4>買進理由／正面證據</h4><ul id="researchReasons" class="health-list"></ul></section>
+          <section class="health-card risk-card"><h4>市場可能忽略的事</h4><ul id="researchRisks" class="health-list"></ul></section>
+        </div>
+        <section class="research-card investment-note">
+          <h3>投資筆記</h3>
+          <div id="researchPlan" class="research-plan"></div>
+          <h4>三個觀察指標</h4><ol id="researchWatch"></ol>
+          <b id="researchOneThing" class="one-thing"></b>
+        </section>
+        <button id="copyAiPrompt" class="secondary research-copy" type="button">複製給 AI 深度分析的提示詞</button>
+        <p class="price-action-note">本頁只整理官方數值與產業常見特性，不會杜撰公司客戶、產品或供應鏈。壓力與停損皆為研究參考，不是目標價或投資建議。</p>
+      </section>
       <section id="tab-price" class="tab active">
         <div class="chart-tools">
           <div><b>K 線與價格行為</b><small id="chartWindowLabel">顯示最近 180 日</small></div>

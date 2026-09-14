@@ -127,13 +127,14 @@ async function startCloudSync(){setSyncBusy(true);try{await checkCloudLatest(fal
 
 function setup(){
  $('empty').hidden=!!snapshot;$('dashboard').hidden=!snapshot;if(!snapshot)return;
- $('tradeDate').textContent=snapshot.latest_trade_date||latestDate(snapshot.stocks[0])||'—';$('stockCount').textContent=`${snapshot.stocks.length} 檔`;
+ $('tradeDate').textContent=snapshot.latest_trade_date||latestDate(snapshot.stocks[0])||'—';$('revenueMonth').textContent=snapshot.latest_revenue_month||latestRevenueMonth()||'—';$('stockCount').textContent=`${snapshot.stocks.length} 檔`;
  setCloudStatus(navigator.onLine?'本機資料':'離線使用');
  const inds=Array.from(new Set(snapshot.stocks.map(s=>s.industry))).sort((a,b)=>a.localeCompare(b,'zh-Hant'));setupMainControls(inds);
  const cond=snapshot.conditions||[];$('strategy').hidden=!cond.length;$('strategyTitle').textContent=`${snapshot.strategy_name||'本次篩選條件'} · ${cond.length} 項`;$('conditions').innerHTML=cond.map(x=>`<li>${esc(x)}</li>`).join('');
  setupConditionBuilder();render();
 }
 function latestDate(s){const p=s&&s.price_history||[];return p.length?p[p.length-1].date:''}
+function latestRevenueMonth(){let result='';(snapshot&&snapshot.stocks||[]).forEach(s=>(s.monthly_revenue||[]).forEach(row=>{const month=String(row.date||'').slice(0,7);if(month>result)result=month}));return result}
 
 function setupMainControls(industries){
  availableIndustries=industries.slice();
@@ -337,6 +338,37 @@ function renderChipAnalysis(health){
  $('chipWeeklyRows').innerHTML=weeks.slice().reverse().map(x=>{const hasChange=valid(x.large_400_change_pct),change=hasChange?num(x.large_400_change_pct):null;return `<tr><td>${esc(x.date||'')}</td><td>${fmt(x.large_400_pct,2)}%</td><td class="${hasChange?(change>=0?'up':'down'):''}">${hasChange?`${change>=0?'+':''}${fmt(change,2)}`:'—'}</td><td>${fmt(x.large_1000_pct,2)}%</td><td>${fmt(x.retail_10_pct,2)}%</td></tr>`}).join('')||'<tr><td colspan="5">尚無 TDCC 每週資料</td></tr>';
  $('chipNote').textContent=health.calculation_note||'集保大戶集中度需要至少兩週資料才會顯示週增減。';
 }
+function industryResearchContext(industry){
+ const name=String(industry||'未分類');
+ const contexts=[
+  [/金融|證券|保險/,['同產業通常靠利差、手續費、保費或資產管理收入獲利；真正的收入組合仍要查看年報。','利率、信用成本與資產品質變化可能同時影響獲利。','以新台幣業務為主時直接匯率曝險通常較低，但海外投資部位仍可能受影響。','資本適足、利率與金融監理規則是主要政策變數。']],
+  [/半導體|電子|電腦|光電|通信|零組件|資訊服務|數位雲端/,['同產業通常靠零組件、硬體、軟體或技術服務銷售獲利；產品組合與客戶結構需再查年報。','景氣循環、關鍵零組件供應、庫存調整與技術世代轉換是主要供應鏈風險。','出口與美元報價比重通常較高，台幣升值可能壓縮換算營收或毛利。','出口管制、資安、AI與半導體產業政策可能改變訂單與成本。']],
+  [/生技|醫療|化學|塑膠|橡膠|油電燃氣/,['同產業通常靠原料、藥品、醫材或製程產品銷售獲利；實際產品與授權收入需查年報。','原料價格、藥證進度、產能利用率及單一原料來源是重要風險。','進口原料與外銷收入可能形成雙向匯率曝險。','藥證、環保、能源與碳費政策可能直接影響上市時程或成本。']],
+  [/航運|觀光|餐旅|貿易|百貨/,['同產業通常靠運價、客運、通路價差或服務收入獲利，淡旺季與價格循環通常明顯。','燃油、運力、旅遊需求與全球物流中斷可能快速改變成本及收入。','外幣收入、燃油及海外支出使匯率成為常見變數。','航權、關稅、觀光與交通政策可能影響需求和供給。']],
+  [/營造|建材|水泥|鋼鐵|玻璃|造紙|電機|電纜/,['同產業通常靠工程、材料或設備銷售獲利；接單、在建案與認列時程需查公司公告。','原料、能源、工程進度及在手訂單品質會影響毛利與現金流。','原物料進口或外銷比重高時，匯率會放大成本與報價波動。','公共建設、房市信用管制、能源與碳費政策是常見變數。']],
+  [/食品|紡織|汽車|居家|運動|文化|農業|電子商務/,['同產業通常靠品牌、製造、通路或消費服務收入獲利；品牌與產品占比需查看年報。','原料、庫存、通路議價與消費需求轉弱可能壓縮毛利。','進口成本與外銷收入可能受匯率影響，需確認公司的避險政策。','消費、食品安全、進出口與產業補貼政策可能影響需求或成本。']]
+ ];
+ const match=contexts.find(item=>item[0].test(name));
+ return match?{model:match[1][0],supply:match[1][1],fx:match[1][2],policy:match[1][3]}:{model:`${name}公司的收入通常來自本業商品或服務；現有官方彙總資料沒有產品與客戶明細，需再查年報確認。`,supply:'現有資料無法判定關鍵供應商、原料與庫存風險，應列為年報必查項目。',fx:'現有資料沒有外幣收入、成本與避險部位，無法可靠判定匯率敏感度。',policy:'應依公司實際業務確認主管機關、補貼、關稅與法規變化。'};
+}
+function buildStockResearch(s){
+ const price=analysePriceAction(s.price_history||[]),financial=s.financial_health||{},chip=s.chip_analysis||{},revenues=sorted(s.monthly_revenue||[]),latestRevenue=revenues[revenues.length-1]||null,quarterly=sorted(s.eps||[]).filter(x=>x.kind!=='cumulative').slice(-4),ttmEps=quarterly.length?quarterly.reduce((sum,x)=>sum+num(x.value),0):null,context=industryResearchContext(s.industry),close=num(s.close),chipScore=valid(chip.score)?num(chip.score):null;
+ let score=0;if(financial.risk_level==='normal')score+=2;else if(financial.risk_level==='major')score-=3;if(chipScore!==null)score+=chipScore>=25?2:chipScore>=5?1:chipScore<=-25?-2:chipScore<=-5?-1:0;if(latestRevenue){score+=num(latestRevenue.yoy_pct)>=10?1:num(latestRevenue.yoy_pct)<0?-1:0;score+=num(latestRevenue.mom_pct)>=5?.5:num(latestRevenue.mom_pct)<-5?-.5:0}if(ttmEps!==null)score+=ttmEps>0?1:-2;if(/^多方/.test(price.view))score+=1;else if(/^空方/.test(price.view))score-=1;score=Math.max(-6,Math.min(6,score));
+ const stance=score>=4?'積極觀察':score>=1?'偏多觀察':score>-2?'中性等待':'保守觀望';
+ const reasons=[];(financial.highlights||[]).slice(0,2).forEach(x=>reasons.push({title:x.title||'財務亮點',detail:x.detail||''}));(chip.positive_signals||[]).slice(0,1).forEach(x=>reasons.push({title:x.title||'籌碼偏多',detail:x.detail||''}));if(latestRevenue&&num(latestRevenue.yoy_pct)>0)reasons.push({title:'最新營收年增',detail:`${String(latestRevenue.date||'').slice(0,7)} YoY ${pct(latestRevenue.yoy_pct)}，MoM ${pct(latestRevenue.mom_pct)}。`});if(ttmEps!==null&&ttmEps>0)reasons.push({title:'近四季 EPS 為正',detail:`目前可取得 ${quarterly.length} 季，合計約 ${ttmEps.toFixed(2)} 元。`});if(!reasons.length)reasons.push({title:'尚無明確正面證據',detail:'目前資料沒有同時出現足夠的財務、營收或籌碼亮點，宜等待新資料。'});
+ const risks=[];(financial.risks||[]).slice(0,2).forEach(x=>risks.push({title:x.title||'財務風險',detail:x.detail||''}));(financial.cautions||[]).slice(0,1).forEach(x=>risks.push({title:x.title||'財務注意',detail:x.detail||''}));(chip.cautions||[]).slice(0,1).forEach(x=>risks.push({title:x.title||'籌碼注意',detail:x.detail||''}));risks.push({title:'供應鏈',detail:context.supply},{title:'客戶集中度',detail:'官方彙總資料沒有前幾大客戶占比，無法直接判斷；應查年報及法說會，避免單一客戶流失造成獲利跳變。'},{title:'匯率',detail:context.fx},{title:'政策',detail:context.policy});
+ const support=price.supports[0],resistance=price.resistances[0],atr=price.atr||close*.02,target=resistance?resistance.price:null,stop=support?Math.max(.01,support.price-Math.max(atr*.25,support.price*.005)):Math.max(.01,close-atr*2),watch=[latestRevenue?`月營收：${String(latestRevenue.date||'').slice(0,7)} MoM ${pct(latestRevenue.mom_pct)}、YoY ${pct(latestRevenue.yoy_pct)}；確認下一期是否延續。`:'月營收：目前沒有最新資料，先確認雲端更新與公司申報。',ttmEps!==null?`EPS：近 ${quarterly.length} 季合計 ${ttmEps.toFixed(2)} 元，觀察下一季是否成長。`:'EPS：單季資料不足，等待下一次季報補齊。',chipScore!==null?`籌碼與價格：籌碼 ${chipScore.toFixed(0)} 分；留意 ${support?support.price.toFixed(2):stop.toFixed(2)} 支撐及 ${target?target.toFixed(2):'近期高點'} 壓力。`:`價格：留意 ${support?support.price.toFixed(2):stop.toFixed(2)} 支撐及 ${target?target.toFixed(2):'近期高點'} 壓力。`],oneThing=risks[0]?.title?`只記一件事：先確認「${risks[0].title}」是否改善，再決定要不要承擔價格風險。`:'只記一件事：沒有足夠資料形成優勢時，等待也是一種決策。';
+ return{score,stance,summary:`${s.name}目前屬於「${stance}」。${price.view} 財務為「${financial.risk_label||'資料不足'}」、籌碼為「${chip.status_label||'資料不足'}」；任何單一訊號都不足以直接下買賣結論。`,model:`${s.name}被歸類在「${s.industry||'未分類'}」。${context.model}`,evidence:latestRevenue?`數值依據：最新月營收 ${String(latestRevenue.date||'').slice(0,7)}、近四季 EPS ${ttmEps===null?'資料不足':ttmEps.toFixed(2)} 元。產品、主要客戶及產業鏈位置仍需公司年報佐證。`:'目前缺少最新月營收；產品、主要客戶及產業鏈位置仍需公司年報佐證。',reasons,risks,target,stop,holding:'先以波段 2～8 週觀察，至少追蹤到下一次月營收；若財務或價格結構轉弱，不因預設時間硬抱。',watch,oneThing,price};
+}
+function renderStockResearch(s){
+ const r=buildStockResearch(s),list=(items)=>items.map(x=>`<li><b>${esc(x.title||'')}</b><span>${esc(x.detail||'')}</span></li>`).join('');
+ $('researchStance').textContent=r.stance;$('researchScore').textContent=`${r.score>=0?'+':''}${r.score.toFixed(1)} 分`;$('researchScore').className=`research-score ${r.score>=1?'positive':r.score<=-2?'negative':'neutral'}`;$('researchSummary').textContent=r.summary;$('businessModel').textContent=r.model;$('businessEvidence').textContent=r.evidence;$('researchReasons').innerHTML=list(r.reasons);$('researchRisks').innerHTML=list(r.risks);$('researchPlan').innerHTML=`<div><span>買進理由</span><b>${esc(r.reasons.slice(0,2).map(x=>x.title).join('、'))}</b></div><div><span>第一壓力／目標觀察</span><b>${r.target?r.target.toFixed(2):'尚無可靠壓力'}</b></div><div><span>風險控制／停損參考</span><b>${r.stop.toFixed(2)}</b></div><div><span>持有時間</span><b>${esc(r.holding)}</b></div>`;$('researchWatch').innerHTML=r.watch.map(x=>`<li>${esc(x)}</li>`).join('');$('researchOneThing').textContent=r.oneThing;
+}
+function buildAiPrompt(s){
+ const r=buildStockResearch(s),f=s.financial_health||{},c=s.chip_analysis||{},rev=sorted(s.monthly_revenue||[]).slice(-12),eps=sorted(s.eps||[]).filter(x=>x.kind!=='cumulative').slice(-8);
+ return `請扮演嚴謹的台股研究分析師，分析 ${s.stock_id} ${s.name}（${s.industry||'未分類'}）。只能使用以下資料；不知道的產品、客戶、供應鏈與事件必須明確寫「資料不足」，不可杜撰。\n\n已知資料：\n- 收盤價：${s.close}，最新漲跌幅：${pct(s.change_pct)}，股本：約 ${fmt(s.capital_billion,2)} 億元\n- 程式綜合觀點：${r.summary}\n- 價格行為：${r.price.view}\n- 財務亮點：${JSON.stringify(f.highlights||[])}\n- 財務風險與注意：${JSON.stringify([...(f.risks||[]),...(f.cautions||[])])}\n- 籌碼：${c.status_label||'資料不足'}，分數 ${valid(c.score)?c.score:'無'}，訊號 ${JSON.stringify([...(c.positive_signals||[]),...(c.cautions||[])])}\n- 月營收：${JSON.stringify(rev)}\n- 單季 EPS：${JSON.stringify(eps)}\n- 支撐：${r.price.supports.map(x=>x.price.toFixed(2)).join('、')||'無'}；壓力：${r.price.resistances.map(x=>x.price.toFixed(2)).join('、')||'無'}\n\n請依序回答：\n1. 用白話拆解商業模式、營收來源、主要客戶與產業鏈位置；沒有資料必須指出待查文件。\n2. 列出財務亮點與財務風險，逐項引用上面的數字。\n3. 從供應鏈、客戶集中度、匯率、政策四個角度分析市場可能尚未定價的風險，並選出最該追蹤的一項。\n4. 寫一份投資筆記：買進理由、目標價情境、停損價情境、持有時間、三個觀察指標。目標與停損必須說明算法，不可保證報酬。\n5. 最後用一句話回答：如果只能記住一件事，應該記住什麼。`;
+}
+async function copyAiPrompt(){if(!selected)return;const text=buildAiPrompt(selected);try{if(navigator.clipboard&&navigator.clipboard.writeText)await navigator.clipboard.writeText(text);else throw Error('clipboard unavailable')}catch(e){const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();document.execCommand('copy');area.remove()}showMessage('已複製這檔股票的 AI 深度分析提示詞',true)}
 function renderEps(items){
  const ordered=sorted(items),quarterly=ordered.filter(x=>x.kind!=='cumulative');
  const values=(quarterly.length?quarterly.slice(-4):ordered.filter(x=>x.kind==='cumulative').slice(-1)).reverse();
@@ -355,11 +387,11 @@ function render(){
 function openDetail(s){
  if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
- $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);resetCandleZoom(false);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
+ $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderStockResearch(s);renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);resetCandleZoom(false);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
 function hideDetail(){if($('detail').hidden)return;const restoreY=listScrollY;$('detail').hidden=true;document.body.classList.remove('detail-open');document.body.style.position='';document.body.style.top='';document.body.style.width='';selected=null;detailHistoryActive=false;touchStart=null;pinchZoom=null;requestAnimationFrame(()=>window.scrollTo(0,restoreY))}
 function requestCloseDetail(){if(detailHistoryActive&&history.state&&history.state.stockDetail)history.back();else hideDetail()}
-function tab(name){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id===`tab-${name}`));if(name==='price')setTimeout(drawCandle,20);if(name==='fund')setTimeout(drawRevenue,20)}
+function tab(name){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id===`tab-${name}`));if(name==='research'&&selected)renderStockResearch(selected);if(name==='price')setTimeout(drawCandle,20);if(name==='fund')setTimeout(drawRevenue,20)}
 function canvas(id,h=340){const c=$(id),d=devicePixelRatio||1,w=c.clientWidth||700;c.width=w*d;c.height=h*d;const x=c.getContext('2d');x.scale(d,d);return{x,w,h}}
 function emaSeries(data,period){if(!data.length)return[];const k=2/(period+1),out=[num(data[0].close)];for(let i=1;i<data.length;i++)out.push(num(data[i].close)*k+out[i-1]*(1-k));return out}
 function analysePriceAction(raw){
@@ -434,6 +466,7 @@ function renderChip(points){const d=points.slice(-20).reverse();$('chip').innerH
 $('fileInput').onchange=e=>importFile(e.target.files[0]);
 $('search').addEventListener('input',render);
 $('backDetail').onclick=requestCloseDetail;$('closeDetail').onclick=requestCloseDetail;$('days').onchange=()=>resetCandleZoom();
+$('copyAiPrompt').onclick=copyAiPrompt;
 $('zoomOut').onclick=()=>setCandleWindow(candleVisibleDays+10);$('zoomIn').onclick=()=>setCandleWindow(candleVisibleDays-10);$('zoomReset').onclick=()=>resetCandleZoom();$('chartZoom').oninput=e=>setCandleWindow(e.target.value);
 $('candle').addEventListener('wheel',e=>{if(!selected)return;e.preventDefault();setCandleWindow(candleVisibleDays+(e.deltaY>0?10:-10))},{passive:false});
 $('candle').addEventListener('touchstart',e=>{if(e.touches.length!==2)return;const [a,b]=e.touches;pinchZoom={distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),days:candleVisibleDays}},{passive:true});
