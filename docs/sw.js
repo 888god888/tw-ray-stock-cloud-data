@@ -1,9 +1,9 @@
-const CACHE_NAME = 'tw-stock-pwa-v12';
+const CACHE_NAME = 'tw-stock-pwa-v14';
 const APP_SHELL = [
   './',
   './index.html',
-  './app.css',
-  './app.js',
+  './app.css?v=12.2',
+  './app.js?v=12.2',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -29,6 +29,18 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   const scopePath = new URL(self.registration.scope).pathname;
   if (url.pathname.startsWith(scopePath + 'data/')) return;
+  if (url.pathname.endsWith('/app.js') || url.pathname.endsWith('/app.css')) {
+    event.respondWith(
+      fetch(request).then(response => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        }
+        return response;
+      }).catch(() => caches.match(request))
+    );
+    return;
+  }
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(() => caches.match('./index.html')));
     return;
