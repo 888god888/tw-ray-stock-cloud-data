@@ -9,6 +9,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
+from backtest_validation import run_backtest
 
 from data_store import DataStore
 from mobile_export import build_mobile_snapshot, write_mobile_snapshot
@@ -115,6 +116,11 @@ def run(db_path: Path, output_dir: Path, force_initial=False):
         "latest_revenue_month": final_coverage.get("revenue_latest_month", ""),
         "revenue_coverage": final_coverage.get("revenue_coverage", {}),
     })
+    print("Validating historical financial and chip score groups", flush=True)
+    snapshot["backtest_validation"] = run_backtest(
+        store, [row["stock_id"] for row in rows]
+    )
+    snapshot["backtest_validation"]["calculated_at"] = snapshot["generated_at"]
     if snapshot.get("financial_analysis_error_count"):
         print(
             "WARNING: financial analysis skipped for "

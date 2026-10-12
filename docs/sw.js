@@ -1,9 +1,9 @@
-const CACHE_NAME = 'tw-stock-pwa-v14';
+const CACHE_NAME = 'tw-stock-pwa-v15';
 const APP_SHELL = [
   './',
   './index.html',
-  './app.css?v=12.2',
-  './app.js?v=12.2',
+  './app.css?v=13.0',
+  './app.js?v=13.0',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

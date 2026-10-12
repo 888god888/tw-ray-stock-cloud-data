@@ -11,7 +11,7 @@
   <title>台股盤後行動選股</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="app.css?v=12.2">
+  <link rel="stylesheet" href="app.css?v=13.0">
 </head>
 <body>
   <main class="shell">
@@ -76,6 +76,13 @@
         <div class="screen-actions"><button id="runScreen" class="primary">開始篩選</button><button id="clearConditions" class="secondary">清除條件</button></div>
       </details>
       <details id="strategy"><summary id="strategyTitle"></summary><ul id="conditions"></ul></details>
+      <details id="backtestPanel" class="backtest-panel">
+        <summary>回測驗證：財務與籌碼分數</summary>
+        <p id="backtestStatus">等待新版盤後資料。</p>
+        <div id="backtestResults" class="table-scroll"></div>
+        <p id="backtestMethod"></p>
+        <p id="backtestLimits"></p>
+      </details>
       <div class="list-title"><b id="visibleCount"></b><span>點選股票查看完整資料</span></div>
       <section id="stockList" class="stock-list"></section>
     </div>
@@ -190,6 +197,6 @@
     </div>
   </div>
   <div id="message" class="message" hidden></div>
-  <script src="app.js?v=12.2"></script>
+  <script src="app.js?v=13.0"></script>
 </body>
 </html>

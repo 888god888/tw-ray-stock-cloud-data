@@ -36,6 +36,7 @@ h1{margin:2px 0 0;font-size:20px}
 details{margin-top:10px;padding:12px 14px;color:#b8cad2;background:#0d202a;border:1px solid var(--line);border-radius:13px}
 details summary{font-weight:800}
 details ul{padding-left:20px;font-size:12px;line-height:1.7}
+.backtest-panel p{color:var(--muted);font-size:12px;line-height:1.6}.backtest-panel .table-scroll{overflow-x:auto}.backtest-table{width:100%;min-width:650px;border-collapse:collapse;font-size:12px}.backtest-table th,.backtest-table td{padding:9px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}.backtest-table th:first-child,.backtest-table td:first-child{text-align:left}
 .list-title{display:flex;justify-content:space-between;padding:17px 3px 9px}
 .list-title span{color:var(--muted);font-size:11px}
 .stock-card{display:grid;grid-template-columns:1fr auto;gap:11px;width:100%;margin-bottom:8px;padding:14px;color:var(--ink);text-align:left;background:linear-gradient(130deg,#102531,#0b1e29);border:1px solid #21404d;border-radius:16px}

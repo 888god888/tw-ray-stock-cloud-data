@@ -129,9 +129,25 @@ function setup(){
  $('empty').hidden=!!snapshot;$('dashboard').hidden=!snapshot;if(!snapshot)return;
  $('tradeDate').textContent=snapshot.latest_trade_date||latestDate(snapshot.stocks[0])||'—';$('revenueMonth').textContent=snapshot.latest_revenue_month||latestRevenueMonth()||'—';$('stockCount').textContent=`${snapshot.stocks.length} 檔`;
  setCloudStatus(navigator.onLine?'本機資料':'離線使用');
+ renderBacktestValidation(snapshot.backtest_validation);
  const inds=Array.from(new Set(snapshot.stocks.map(s=>s.industry))).sort((a,b)=>a.localeCompare(b,'zh-Hant'));setupMainControls(inds);
  const cond=snapshot.conditions||[];$('strategy').hidden=!cond.length;$('strategyTitle').textContent=`${snapshot.strategy_name||'本次篩選條件'} · ${cond.length} 項`;$('conditions').innerHTML=cond.map(x=>`<li>${esc(x)}</li>`).join('');
  setupConditionBuilder();render();
+}
+function renderBacktestValidation(report){
+ const status=$('backtestStatus'),results=$('backtestResults');
+ if(!report||!report.results){status.textContent='這份資料尚未包含回測；下一次盤後更新後才會產生。';results.innerHTML='';$('backtestMethod').textContent='';$('backtestLimits').textContent='';return}
+ status.textContent=`${report.status==='exploratory'?'探索性結果':'樣本不足，暫不判斷'} · ${report.stock_universe||0} 檔候選 · ${report.candidate_weeks||0} 個候選週 · 計算 ${String(report.calculated_at||'').slice(0,10)}`;
+ const labels={financial:'財務風險低／高',institutional:'法人高／低分',chip:'完整籌碼高／低分'},rows=[];
+ for(const key of ['financial','institutional','chip']){
+  for(const item of report.results[key]||[]){
+   const insufficient=item.status!=='exploratory';
+   rows.push(`<tr><td>${esc(labels[key])}</td><td>${num(item.horizon,0)}日</td><td>${insufficient?'樣本不足':fmt(item.high_return_pct,2)+'%'}</td><td>${insufficient?'—':fmt(item.low_return_pct,2)+'%'}</td><td class="${num(item.spread_pct)<0?'down':'up'}">${insufficient?'—':(num(item.spread_pct)>=0?'+':'')+fmt(item.spread_pct,2)+'%'}</td><td>${num(item.cohorts,0)}週／${num(item.high_samples,0)}、${num(item.low_samples,0)}筆</td></tr>`);
+  }
+ }
+ results.innerHTML=`<table class="backtest-table"><thead><tr><th>分組</th><th>持有</th><th>高分平均</th><th>低分平均</th><th>差距</th><th>樣本</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+ $('backtestMethod').textContent=`方法：${report.method||''} 財務：${report.definitions&&report.definitions.financial||''} 法人：${report.definitions&&report.definitions.institutional||''} 完整籌碼：${report.definitions&&report.definitions.chip||''}`;
+ $('backtestLimits').textContent=`限制：${report.limits||''}`;
 }
 function latestDate(s){const p=s&&s.price_history||[];return p.length?p[p.length-1].date:''}
 function latestRevenueMonth(){let result='';(snapshot&&snapshot.stocks||[]).forEach(s=>(s.monthly_revenue||[]).forEach(row=>{const month=String(row.date||'').slice(0,7);if(month>result)result=month}));return result}
