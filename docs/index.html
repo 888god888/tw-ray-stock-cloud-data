@@ -11,7 +11,7 @@
   <title>台股盤後行動選股</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="app.css?v=13.1">
+  <link rel="stylesheet" href="app.css?v=13.2">
 </head>
 <body>
   <main class="shell">
@@ -90,14 +90,22 @@
   <div id="detail" class="detail" hidden>
     <div id="detailPanel" class="detail-panel">
       <div class="detail-nav">
+        <button id="copyStockCode" class="copy-stock-code" type="button" aria-label="複製股票代號，貼到樹精靈搜尋">複製代號</button>
+        <a id="openTreeApp" class="open-tree-app" href="#treeShortcutSetup" aria-label="開啟樹精靈，首次使用需設定 iPhone 捷徑">開啟樹精靈 ↗</a>
         <button id="backDetail" class="back-detail" type="button" aria-label="返回篩選結果">← 返回篩選結果</button>
         <button id="closeDetail" class="close" type="button" aria-label="關閉股票資料">×</button>
       </div>
       <section class="detail-head">
-        <div class="detail-code-action"><span id="detailCode" class="code"></span><button id="copyStockCode" class="copy-stock-code" type="button" aria-label="複製股票代號，貼到樹精靈搜尋">複製代號</button></div>
+        <span id="detailCode" class="code"></span>
         <h2 id="detailName"></h2><small id="detailIndustry"></small>
         <div class="detail-price"><b id="detailClose"></b><span id="detailChange"></span></div>
         <div class="metrics"><div><span>股本</span><b id="detailCapital"></b></div><div><span>成交量</span><b id="detailVolume"></b></div><div><span>符合</span><b id="detailMatch"></b></div></div>
+        <details id="treeShortcutSetup" class="tree-shortcut-setup">
+          <summary>iPhone 首次使用「開啟樹精靈」：設定一次捷徑</summary>
+          <ol><li>打開 iPhone「捷徑」App，新增捷徑並命名為「開啟樹精靈」。</li><li>加入「拷貝到剪貼板」動作，內容選「捷徑輸入」。</li><li>接著加入「打開 App」動作，選擇「國泰證券 樹精靈」，儲存並先在捷徑中試跑一次。</li></ol>
+          <p>完成後按下方「已設定捷徑」，往後點「開啟樹精靈」就會帶著這檔股票代號開啟 App；進入後在搜尋框貼上代號。</p>
+          <button id="treeShortcutReady" class="secondary" type="button">已設定捷徑</button>
+        </details>
       </section>
       <nav class="tabs"><button data-tab="research">分析</button><button data-tab="price" class="active">日線</button><button data-tab="fund">基本面</button><button data-tab="chip">籌碼</button><button data-tab="condition">條件</button></nav>
       <section id="tab-research" class="tab">
@@ -198,6 +206,6 @@
     </div>
   </div>
   <div id="message" class="message" hidden></div>
-  <script src="app.js?v=13.1"></script>
+  <script src="app.js?v=13.2"></script>
 </body>
 </html>

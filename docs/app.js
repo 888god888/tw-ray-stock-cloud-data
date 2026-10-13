@@ -14,6 +14,8 @@ const CLOUD_MANIFEST=CLOUD_DATA+'manifest.json';
 const CLOUD_SNAPSHOT=CLOUD_DATA+'snapshot.json.gz';
 const CLOUD_HASH_KEY='tw-stock-pwa-snapshot-sha256';
 const SCREEN_STATE_KEY='tw-stock-pwa-screen-state-v1';
+const TREE_SHORTCUT_NAME='開啟樹精靈';
+const TREE_SHORTCUT_READY_KEY='tw-stock-tree-shortcut-ready-v1';
 
 const SORT_SPECS=[
  ['change_desc','漲幅高 → 低'],['change_asc','跌幅大 → 小'],
@@ -421,9 +423,18 @@ async function copyStockCode(){
   copyCodeTimer=setTimeout(()=>{button.textContent='複製代號'},2500);
  }
 }
+function openTreeApp(e){
+ if(!selected){e.preventDefault();return}
+ if(!/iphone|ipad|ipod/i.test(navigator.userAgent)){e.preventDefault();showMessage('請在 iPhone 上使用「開啟樹精靈」');return}
+ if(localStorage.getItem(TREE_SHORTCUT_READY_KEY)!=='1'){
+  e.preventDefault();const guide=$('treeShortcutSetup');guide.open=true;guide.scrollIntoView({behavior:'smooth',block:'center'});
+  showMessage('先照畫面設定一次 iPhone 捷徑，再點「已設定捷徑」');
+ }
+}
 function openDetail(s){
  if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
  clearTimeout(copyCodeTimer);$('copyStockCode').textContent='複製代號';
+ $('openTreeApp').href=`shortcuts://run-shortcut?name=${encodeURIComponent(TREE_SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(s.stock_id)}`;
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
  $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderStockResearch(s);renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);resetCandleZoom(false);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
@@ -505,6 +516,8 @@ $('fileInput').onchange=e=>importFile(e.target.files[0]);
 $('search').addEventListener('input',render);
 $('backDetail').onclick=requestCloseDetail;$('closeDetail').onclick=requestCloseDetail;$('days').onchange=()=>resetCandleZoom();
 $('copyStockCode').onclick=copyStockCode;
+$('openTreeApp').onclick=openTreeApp;
+$('treeShortcutReady').onclick=()=>{localStorage.setItem(TREE_SHORTCUT_READY_KEY,'1');$('treeShortcutSetup').open=false;showMessage('設定已記錄；現在點下方「開啟樹精靈」試試看',true)};
 $('copyAiPrompt').onclick=copyAiPrompt;
 $('zoomOut').onclick=()=>setCandleWindow(candleVisibleDays+10);$('zoomIn').onclick=()=>setCandleWindow(candleVisibleDays-10);$('zoomReset').onclick=()=>resetCandleZoom();$('chartZoom').oninput=e=>setCandleWindow(e.target.value);
 $('candle').addEventListener('wheel',e=>{if(!selected)return;e.preventDefault();setCandleWindow(candleVisibleDays+(e.deltaY>0?10:-10))},{passive:false});
