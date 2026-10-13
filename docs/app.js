@@ -2,6 +2,7 @@ const $=id=>document.getElementById(id);
 let snapshot=null,selected=null,screenedStocks=null,activeConditions=[],builderReady=false,mainControlsReady=false,conditionsHydrated=false;
 let selectedIndustries=new Set(),availableIndustries=[],detailHistoryActive=false,touchStart=null,listScrollY=0;
 let candleVisibleDays=180,pinchZoom=null,chartResizeTimer=null;
+let copyCodeTimer=null;
 const ACTIVE_CONDITIONS_KEY='tw-stock-mobile-conditions';
 const ACTIVE_CONDITIONS_DB_KEY='active-conditions-v1';
 const SAVED_STRATEGIES_KEY='tw-stock-mobile-saved-strategies-v1';
@@ -400,8 +401,29 @@ function render(){
  $('stockList').innerHTML=rows.map(s=>{const f=s.financial_health||{},c=s.chip_analysis||{};return `<button class="stock-card" data-id="${esc(s.stock_id)}"><div class="identity"><span class="code">${esc(s.stock_id)}</span><b>${esc(s.name)}</b><small>${esc(s.industry)}</small></div><div class="quote"><b>${s.close.toFixed(2)}</b><span class="change ${s.change_pct>=0?'up':'down'}">${pct(s.change_pct)}</span></div><div class="card-signals"><span class="health-badge ${f.risk_level||'unknown'}">財務 ${esc(f.risk_label||'資料不足')}</span><span class="health-badge chip-${c.status||'unknown'}">${esc(c.status_label||'籌碼資料不足')}${valid(c.score)?` ${num(c.score).toFixed(0)}`:''}</span></div><div class="card-metrics"><span>股本<b>${fmt(s.capital_billion,2)} 億</b></span><span>成交量<b>${fmt(s.volume_lots,1)} 張</b></span><span>符合<b>${esc(s.match||'—')}</b></span></div></button>`}).join('')||'<div class="empty-state">目前沒有符合股票</div>';
  $('stockList').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>openDetail(rows.find(s=>s.stock_id===b.dataset.id)));
 }
+function copyTextFallback(text){
+ const area=document.createElement('textarea');
+ area.value=text;area.setAttribute('readonly','');area.style.cssText='position:fixed;left:-9999px;top:0;opacity:0;font-size:16px';
+ document.body.appendChild(area);area.focus();area.select();area.setSelectionRange(0,text.length);
+ let copied=false;try{copied=document.execCommand('copy')}finally{area.remove()}
+ return copied;
+}
+async function copyStockCode(){
+ if(!selected)return;
+ const code=String(selected.stock_id),button=$('copyStockCode');
+ let copied=false;
+ if(navigator.clipboard&&navigator.clipboard.writeText){try{await navigator.clipboard.writeText(code);copied=true}catch(e){/* Older iPhone PWAs may require the selection fallback. */}}
+ if(!copied){try{copied=copyTextFallback(code)}catch(e){copied=false}}
+ if(!copied){showMessage(`無法自動複製；可長按上方代號 ${code} 複製`);return}
+ showMessage(`已複製 ${code}，到樹精靈搜尋框貼上即可`,true);
+ if(selected&&String(selected.stock_id)===code){
+  clearTimeout(copyCodeTimer);button.textContent=`已複製 ${code}`;
+  copyCodeTimer=setTimeout(()=>{button.textContent='複製代號'},2500);
+ }
+}
 function openDetail(s){
  if(!s)return;listScrollY=window.scrollY||0;saveScreenState(listScrollY);selected=s;$('detail').hidden=false;document.body.style.top=`-${listScrollY}px`;document.body.style.position='fixed';document.body.style.width='100%';document.body.classList.add('detail-open');$('detailPanel').scrollTop=0;
+ clearTimeout(copyCodeTimer);$('copyStockCode').textContent='複製代號';
  if(!detailHistoryActive){history.pushState({stockDetail:s.stock_id},'',`#stock-${encodeURIComponent(s.stock_id)}`);detailHistoryActive=true}
  $('detailCode').textContent=s.stock_id;$('detailName').textContent=s.name;$('detailIndustry').textContent=s.industry;$('detailClose').textContent=s.close.toFixed(2);$('detailChange').textContent=pct(s.change_pct);$('detailChange').className=s.change_pct>=0?'up':'down';$('detailCapital').textContent=`${fmt(s.capital_billion,2)} 億`;$('detailVolume').textContent=`${fmt(s.volume_lots,1)} 張`;$('detailMatch').textContent=s.match||'—';renderStockResearch(s);renderFinancialHealth(s.financial_health);renderChipAnalysis(s.chip_analysis);renderEps(s.eps||[]);$('detailConditions').innerHTML=((s._screenDetails&&s._screenDetails.length?s._screenDetails:s.details)||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li>沒有條件明細</li>';renderChip(s.institutional||[]);resetCandleZoom(false);requestAnimationFrame(()=>{drawCandle();drawRevenue()});
 }
@@ -482,6 +504,7 @@ function renderChip(points){const d=points.slice(-20).reverse();$('chip').innerH
 $('fileInput').onchange=e=>importFile(e.target.files[0]);
 $('search').addEventListener('input',render);
 $('backDetail').onclick=requestCloseDetail;$('closeDetail').onclick=requestCloseDetail;$('days').onchange=()=>resetCandleZoom();
+$('copyStockCode').onclick=copyStockCode;
 $('copyAiPrompt').onclick=copyAiPrompt;
 $('zoomOut').onclick=()=>setCandleWindow(candleVisibleDays+10);$('zoomIn').onclick=()=>setCandleWindow(candleVisibleDays-10);$('zoomReset').onclick=()=>resetCandleZoom();$('chartZoom').oninput=e=>setCandleWindow(e.target.value);
 $('candle').addEventListener('wheel',e=>{if(!selected)return;e.preventDefault();setCandleWindow(candleVisibleDays+(e.deltaY>0?10:-10))},{passive:false});

@@ -59,6 +59,9 @@ details ul{padding-left:20px;font-size:12px;line-height:1.7}
 .back-detail{width:100%;height:52px;padding:0 16px;color:#04110f;font-weight:900;background:var(--green);border:0;border-radius:14px}
 .close{position:static;width:58px;height:52px;color:var(--ink);font-size:31px;line-height:1;background:#17303d;border:1px solid #426473;border-radius:14px}
 .detail-head{padding:22px 18px 16px;background:linear-gradient(135deg,#14313e,#0c202c);border-bottom:1px solid var(--line)}
+.detail-code-action{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.detail-code-action .code{font-size:15px;user-select:text;-webkit-user-select:text}
+.copy-stock-code{min-height:44px;padding:8px 14px;color:#04110f;font-size:13px;font-weight:900;background:var(--green);border:0;border-radius:11px;touch-action:manipulation}
 .detail-head h2{margin:8px 0 2px;font-size:27px}
 .detail-head>small{color:var(--muted)}
 .detail-price{display:flex;align-items:baseline;gap:12px;margin-top:9px}

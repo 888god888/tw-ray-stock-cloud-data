@@ -11,7 +11,7 @@
   <title>台股盤後行動選股</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="app.css?v=13.0">
+  <link rel="stylesheet" href="app.css?v=13.1">
 </head>
 <body>
   <main class="shell">
@@ -94,7 +94,8 @@
         <button id="closeDetail" class="close" type="button" aria-label="關閉股票資料">×</button>
       </div>
       <section class="detail-head">
-        <span id="detailCode" class="code"></span><h2 id="detailName"></h2><small id="detailIndustry"></small>
+        <div class="detail-code-action"><span id="detailCode" class="code"></span><button id="copyStockCode" class="copy-stock-code" type="button" aria-label="複製股票代號，貼到樹精靈搜尋">複製代號</button></div>
+        <h2 id="detailName"></h2><small id="detailIndustry"></small>
         <div class="detail-price"><b id="detailClose"></b><span id="detailChange"></span></div>
         <div class="metrics"><div><span>股本</span><b id="detailCapital"></b></div><div><span>成交量</span><b id="detailVolume"></b></div><div><span>符合</span><b id="detailMatch"></b></div></div>
       </section>
@@ -197,6 +198,6 @@
     </div>
   </div>
   <div id="message" class="message" hidden></div>
-  <script src="app.js?v=13.0"></script>
+  <script src="app.js?v=13.1"></script>
 </body>
 </html>
